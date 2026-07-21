@@ -210,6 +210,24 @@ function abrirNotif(notifId, otId) {
 async function checkNotifLoop() {
   if(!currentUser) return
   try {
+    // Refresh OTs
+    const freshOTs = await SB.select('ots')
+    if(freshOTs) {
+      const currentView = document.querySelector('.nav-item.active')?.dataset?.view
+      OTs = freshOTs
+      // Re-render lista if currently on lista or dashboard view
+      if(currentView === 'lista') renderLista()
+      if(currentView === 'dashboard') renderDashboard()
+    }
+
+    // Refresh solicitudes
+    const freshSol = await SB.select('solicitudes')
+    if(freshSol) {
+      Solicitudes = freshSol
+      updateBadgeSol()
+    }
+
+    // Refresh notificaciones
     const fresh = await SB.select('notificaciones', 'para_usuario_id=eq.'+currentUser.id+'&leida=eq.false&order=fecha.desc')
     if(fresh) {
       const oldIds = new Set(Notificaciones.filter(function(n){return !n.leida}).map(function(n){return n.id}))
@@ -277,7 +295,7 @@ async function doLogin() {
     renderApp()
     if(isAdmin()) showView('nueva')
     else showView('lista')
-    notifInterval = setInterval(checkNotifLoop, 3000)
+    notifInterval = setInterval(checkNotifLoop, 10000)
   } catch(e) {
     showAlert('login-alert','Error de conexión. Intenta de nuevo.','danger')
     if(btn) { btn.innerHTML = '<i class="ti ti-login"></i> Ingresar'; btn.disabled = false }
@@ -288,7 +306,23 @@ function doLogout() {
   currentUser=null; photoDataURLs=[]
   if(notifInterval) { clearInterval(notifInterval); notifInterval=null }
   renderLogin()
-setTimeout(function(){if(window.checkMobile)checkMobile()}, 200)
+setTimeout(function(){
+  if(window.checkMobile) checkMobile()
+  // Attach mobile menu button listener
+  var btn = document.getElementById('mob-menu-btn')
+  if(btn) btn.addEventListener('click', function(){ openMobMenu() })
+}, 300)
+
+// Register service worker for PWA
+if('serviceWorker' in navigator) {
+  window.addEventListener('load', function() {
+    navigator.serviceWorker.register('/sw.js').then(function(reg) {
+      console.log('SW registrado')
+    }).catch(function(err) {
+      console.log('SW error:', err)
+    })
+  })
+}
 }
 
 // ─── APP ──────────────────────────────────────────────────────
@@ -365,7 +399,7 @@ function renderApp() {
   '<style>@keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}</style>'+
   '<div id="mob-overlay" onclick="closeMobMenu()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:198"></div>'+
 '<div id="mob-topbar" style="display:none;position:fixed;top:0;left:0;right:0;height:52px;background:#fff;border-bottom:1px solid #e5e5e5;align-items:center;padding:0 16px;gap:12px;z-index:150;box-shadow:0 2px 8px rgba(0,0,0,0.06)">'+
-'<button onclick="openMobMenu()" style="background:none;border:none;cursor:pointer;font-size:22px;color:#185FA5;padding:4px"><i class="ti ti-menu-2"></i></button>'+
+'<button id="mob-menu-btn" style="background:none;border:none;cursor:pointer;font-size:22px;color:#185FA5;padding:4px"><i class="ti ti-menu-2"></i></button>'+
 '<img src="'+logoSrc+'" style="height:32px;width:auto" alt="Electroram">'+
 '</div>'+
 '<div id="sidebar-overlay" onclick="closeSidebar()" style="display:none"></div>'+
@@ -502,7 +536,7 @@ function renderApp() {
               '<input id="a-perillas-obs" placeholder="Observación..." style="padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-family:inherit;font-size:12px;width:100%">'+
             '</div>'+
             '<div style="display:grid;grid-template-columns:120px 160px 1fr;gap:8px;align-items:center">'+
-              '<label style="font-size:13px;font-weight:500">Pernos</label>'+
+              '<label style="font-size:13px;font-weight:500">Otro</label>'+
               '<select id="a-pernos" style="padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-family:inherit;font-size:12px"><option value="No aplica">No aplica</option><option value="OK">OK</option><option value="Dañados">Dañados</option><option value="No">No</option></select>'+
               '<input id="a-pernos-obs" placeholder="Observación..." style="padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-family:inherit;font-size:12px;width:100%">'+
             '</div>'+
@@ -521,6 +555,8 @@ function renderApp() {
               '<select id="a-cargador" style="padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-family:inherit;font-size:12px"><option value="No aplica">No aplica</option><option value="OK">OK</option><option value="Dañado">Dañado</option><option value="No">No</option></select>'+
               '<input id="a-cargador-obs" placeholder="Observación..." style="padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-family:inherit;font-size:12px;width:100%">'+
             '</div>'+
+          '</div>'+
+          '<textarea id="accs-obs-otros" placeholder="Observaciones sobre accesorios o estado del equipo al ingreso..." style="display:none;width:100%;min-height:80px;padding:8px;border:1px solid #ddd;border-radius:8px;font-family:inherit;font-size:13px;resize:vertical"></textarea>'+
           '</div>'+
         '</div>'+
 
@@ -765,6 +801,14 @@ function renderApp() {
 
 // ─── NAVEGACIÓN ──────────────────────────────────────────────
 function showView(v) {
+  setTimeout(function(){
+    var btn = document.getElementById('mob-menu-btn')
+    if(btn && !btn._hasListener) {
+      btn._hasListener = true
+      btn.addEventListener('click', function(){ openMobMenu() })
+    }
+    if(window.checkMobile) checkMobile()
+  }, 100)
   document.querySelectorAll('.view').forEach(function(el){el.classList.add('hidden')})
   document.querySelectorAll('.nav-item').forEach(function(el){el.classList.remove('active')})
   const viewEl = document.getElementById('view-'+v)
@@ -1387,7 +1431,7 @@ function showAddUsuario(id) {
 async function saveUsuario(id) {
   const nombre=val('m-unombre').trim();const usuario=val('m-uusuario').trim();const pass=val('m-upass').trim();const rol=val('m-urol')
   if(!nombre||!usuario||!pass){alert('Todos los campos son obligatorios');return}
-  const data={nombre,usuario,password:pass,rol}
+  const email=val('m-uemail').trim()||null;const data={nombre,usuario,password:pass,rol,email}
   if(id){
     const u=Usuarios.find(function(x){return x.id===id})
     if(u) Object.assign(u,data)
