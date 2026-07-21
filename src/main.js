@@ -1,27 +1,92 @@
 // RadioTech v3.0 — Flujo recepción + técnico + notificaciones
 
-const DB = {
-  get: (k) => { try { return JSON.parse(localStorage.getItem('rt_' + k) || 'null') } catch(e) { return null } },
-  set: (k, v) => { try { localStorage.setItem('rt_' + k, JSON.stringify(v)) } catch(e) {} }
+
+// ─── SUPABASE CLIENT ─────────────────────────────────────────
+const SUPA_URL = 'https://rhchmwnwzgpdnqutvsrz.supabase.co'
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJoY2htd253emdwZG5xdXR2c3J6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ1OTUwMjksImV4cCI6MjEwMDE3MTAyOX0.OLkSCGtiQpoTbyqSGgW1elo4rYNt3HqO_8s09AEnBmI'
+
+async function supaFetch(path, options) {
+  const res = await fetch(SUPA_URL + '/rest/v1/' + path, {
+    headers: {
+      'apikey': SUPA_KEY,
+      'Authorization': 'Bearer ' + SUPA_KEY,
+      'Content-Type': 'application/json',
+      'Prefer': options?.prefer || 'return=representation'
+    },
+    ...options
+  })
+  if(!res.ok) {
+    const err = await res.text()
+    console.error('Supabase error:', err)
+    return null
+  }
+  const text = await res.text()
+  return text ? JSON.parse(text) : []
 }
 
-let OTs = DB.get('ots') || []
-let Clientes = DB.get('clientes') || []
-let Inventario = DB.get('inventario') || []
-let Solicitudes = DB.get('solicitudes') || []
-let Notificaciones = DB.get('notificaciones') || []
-let Usuarios = DB.get('usuarios') || [
-  { id: '1', nombre: 'Administrador', usuario: 'admin', password: 'admin123', rol: 'admin' },
-  { id: '2', nombre: 'Técnico Demo', usuario: 'tecnico', password: 'tec123', rol: 'tecnico' }
-]
+// CRUD helpers
+const SB = {
+  select: (table, query) => supaFetch(table + '?' + (query||'order=created_at.desc')),
+  insert: (table, data) => supaFetch(table, {method:'POST', body:JSON.stringify(data)}),
+  update: (table, id, data) => supaFetch(table + '?id=eq.' + id, {method:'PATCH', body:JSON.stringify(data), prefer:'return=representation'}),
+  delete: (table, id) => supaFetch(table + '?id=eq.' + id, {method:'DELETE'}),
+  upsert: (table, data, onConflict) => supaFetch(table + (onConflict?'?on_conflict='+onConflict:''), {method:'POST', body:JSON.stringify(data), prefer:'resolution=merge-duplicates,return=representation'}),
+}
+
+// ─── LOCAL STATE ─────────────────────────────────────────────
+let OTs = []
+let Clientes = []
+let Inventario = []
+let Solicitudes = []
+let Notificaciones = []
+let Usuarios = []
 let currentUser = null
 let photoDataURLs = []
 let notifInterval = null
 
+// Save to Supabase
+async function saveOT(data) {
+  const row = {
+    id: data.id, orden: data.orden, fecha: data.fecha, servicio: data.servicio,
+    estado: data.estado, tecnico: data.tecnico||null, garantia: data.garantia||null,
+    cliente: data.cliente, rut: data.rut||null, solicitado: data.solicitado||null,
+    fono: data.fono||null, direccion: data.direccion||null, ciudad: data.ciudad||null,
+    tipo: data.tipo||null, subtipo: data.subtipo||null, marca: data.marca, modelo: data.modelo,
+    serie: data.serie||null, observaciones: data.observaciones||null, informe: data.informe||null,
+    banda: data.banda||null, frecuencias: data.frecuencias||null, canales: data.canales||null,
+    mdo: data.mdo||null, accs: data.accs||{}, params: data.params||{},
+    repuestos: data.repuestos||[], fotos: data.fotos||[]
+  }
+  return await SB.upsert('ots', row, 'id')
+}
+
+async function saveCliente(data) {
+  return await SB.upsert('clientes', data, 'id')
+}
+
+async function loadAll() {
+  try {
+    const [ots, clientes, inv, sol, notifs, users] = await Promise.all([
+      SB.select('ots'),
+      SB.select('clientes'),
+      SB.select('inventario'),
+      SB.select('solicitudes'),
+      SB.select('notificaciones'),
+      SB.select('usuarios')
+    ])
+    OTs = ots || []
+    Clientes = clientes || []
+    Inventario = inv || []
+    Solicitudes = sol || []
+    Notificaciones = notifs || []
+    Usuarios = users || []
+  } catch(e) {
+    console.error('Error loading data:', e)
+  }
+}
+
 function saveAll() {
-  DB.set('ots', OTs); DB.set('clientes', Clientes)
-  DB.set('inventario', Inventario); DB.set('solicitudes', Solicitudes)
-  DB.set('notificaciones', Notificaciones); DB.set('usuarios', Usuarios)
+  // Legacy - no longer needed for Supabase but kept for compatibility
 }
 
 // ─── UTILS ───────────────────────────────────────────────────
@@ -49,26 +114,31 @@ function isAdmin() { return currentUser&&currentUser.rol==='admin' }
 function getTecnicos() { return Usuarios.filter(u=>u.rol==='tecnico') }
 
 // ─── NOTIFICACIONES ──────────────────────────────────────────
-function crearNotificacion(paraUsuarioId, tipo, mensaje, otId) {
-  const n = { id: Date.now().toString()+Math.random(), paraUsuarioId, tipo, mensaje, otId, leida: false, fecha: new Date().toISOString() }
-  Notificaciones.unshift(n)
-  saveAll()
+async function crearNotificacion(paraUsuarioId, tipo, mensaje, otId) {
+  const n = { id: Date.now().toString()+Math.random(), para_usuario_id: paraUsuarioId, tipo, mensaje, ot_id: otId||null, leida: false }
+  Notificaciones.unshift({...n, paraUsuarioId, otId})
+  await SB.insert('notificaciones', n)
 }
 
 function getMisNotificaciones() {
   if(!currentUser) return []
-  return Notificaciones.filter(n=>n.paraUsuarioId===currentUser.id && !n.leida)
+  return Notificaciones.filter(function(n){
+    const pid = n.para_usuario_id || n.paraUsuarioId
+    return pid===currentUser.id && !n.leida
+  })
 }
 
-function marcarLeida(id) {
+async function marcarLeida(id) {
   const n = Notificaciones.find(x=>x.id===id)
-  if(n) { n.leida=true; saveAll() }
+  if(n) { n.leida=true; await SB.update('notificaciones', id, {leida:true}) }
   renderNotifBadge()
 }
 
-function marcarTodasLeidas() {
-  getMisNotificaciones().forEach(n=>n.leida=true)
-  saveAll(); renderNotifBadge()
+async function marcarTodasLeidas() {
+  const pending = getMisNotificaciones()
+  pending.forEach(function(n){n.leida=true})
+  await Promise.all(pending.map(function(n){ return SB.update('notificaciones', n.id, {leida:true}) }))
+  renderNotifBadge()
   document.getElementById('notif-panel')?.classList.add('hidden')
 }
 
@@ -129,19 +199,24 @@ function abrirNotif(notifId, otId) {
   }
 }
 
-function checkNotifLoop() {
-  // Poll localStorage for new notifications (works across tabs on same browser)
-  const fresh = DB.get('notificaciones')
-  if(fresh) Notificaciones = fresh
-  const count = getMisNotificaciones().length
-  const badge = document.getElementById('notif-badge')
-  if(badge) { badge.textContent=count; badge.style.display=count>0?'flex':'none' }
-  // Show popup for brand new unread notifs
-  const newest = getMisNotificaciones().find(n=>!n._shown)
-  if(newest) {
-    newest._shown = true
-    showPopupNotif(newest)
-  }
+async function checkNotifLoop() {
+  if(!currentUser) return
+  try {
+    const fresh = await SB.select('notificaciones', 'para_usuario_id=eq.'+currentUser.id+'&leida=eq.false&order=fecha.desc')
+    if(fresh) {
+      const oldIds = new Set(Notificaciones.filter(function(n){return !n.leida}).map(function(n){return n.id}))
+      Notificaciones = Notificaciones.filter(function(n){return n.leida})
+      fresh.forEach(function(n){
+        n.paraUsuarioId = n.para_usuario_id
+        n.otId = n.ot_id
+        if(!oldIds.has(n.id)) n._shown = false
+        Notificaciones.unshift(n)
+      })
+      const newest = getMisNotificaciones().find(function(n){return !n._shown})
+      if(newest) { newest._shown=true; showPopupNotif(newest) }
+    }
+  } catch(e) {}
+  renderNotifBadge()
 }
 
 function showPopupNotif(n) {
@@ -176,16 +251,29 @@ function renderLogin() {
     '</div></div>'
 }
 
-function doLogin() {
+async function doLogin() {
   const u = val('l-usuario').trim().toLowerCase()
   const p = val('l-password').trim()
-  const user = Usuarios.find(x=>x.usuario.toLowerCase()===u && x.password===p)
-  if(!user) { showAlert('login-alert','Usuario o contraseña incorrectos','danger'); return }
-  currentUser = user
-  renderApp()
-  if(isAdmin()) showView('nueva')
-  else showView('lista')
-  notifInterval = setInterval(checkNotifLoop, 3000)
+  if(!u || !p) { showAlert('login-alert','Ingresa usuario y contraseña','warning'); return }
+  const btn = document.querySelector('[onclick="doLogin()"]')
+  if(btn) { btn.textContent = 'Cargando...'; btn.disabled = true }
+  try {
+    const users = await SB.select('usuarios', 'usuario=eq.'+encodeURIComponent(u)+'&password=eq.'+encodeURIComponent(p))
+    if(!users || !users.length) {
+      showAlert('login-alert','Usuario o contraseña incorrectos','danger')
+      if(btn) { btn.innerHTML = '<i class="ti ti-login"></i> Ingresar'; btn.disabled = false }
+      return
+    }
+    currentUser = users[0]
+    await loadAll()
+    renderApp()
+    if(isAdmin()) showView('nueva')
+    else showView('lista')
+    notifInterval = setInterval(checkNotifLoop, 3000)
+  } catch(e) {
+    showAlert('login-alert','Error de conexión. Intenta de nuevo.','danger')
+    if(btn) { btn.innerHTML = '<i class="ti ti-login"></i> Ingresar'; btn.disabled = false }
+  }
 }
 
 function doLogout() {
@@ -285,7 +373,7 @@ function renderApp() {
             '<div class="field"><label>Categoría de equipo *</label>'+
               '<select id="f-tipo" onchange="onTipoChange(this.value)">'+
                 '<option value="">Seleccionar...</option>'+
-                '<option value="radio">Radio (Portátil/Móvil/Base)</option>'+
+                '<option value="radio">Radio</option>'+
                 '<option value="duplexor">Duplexor</option>'+
                 '<option value="antena">Antena</option>'+
                 '<option value="regulador">Regulador de carga</option>'+
@@ -293,23 +381,73 @@ function renderApp() {
                 '<option value="otro">Otro equipamiento</option>'+
               '</select>'+
             '</div>'+
-            '<div class="field" id="f-subtipo-wrap" style="display:none"><label>Modelo/Tipo específico</label><input id="f-subtipo" placeholder="ej: Portátil UHF, Duplexor 6 cavidades..."></div>'+
+            '<div class="field" id="f-subtipo-wrap" style="display:none">'+
+              '<label>Tipo de radio</label>'+
+              '<select id="f-subtipo">'+
+                '<option value="">Seleccionar...</option>'+
+                '<option value="portatil">Portátil</option>'+
+                '<option value="movil">Móvil</option>'+
+                '<option value="base">Base</option>'+
+                '<option value="repetidora">Repetidora</option>'+
+              '</select>'+
+            '</div>'+
             '<div class="field"><label>Marca *</label><input id="f-marca" placeholder="Motorola, Kenwood..."></div>'+
             '<div class="field"><label>Modelo *</label><input id="f-modelo" placeholder="DEP450"></div>'+
             '<div class="field"><label>N° de Serie</label><input id="f-serie" placeholder="752TRKA455" oninput="checkHistorial(this.value)"></div>'+
           '</div>'+
           '<div id="hist-alert" class="alert hidden"></div>'+
           '<div class="section-label"><i class="ti ti-package"></i> Accesorios recibidos</div>'+
-          '<div class="acc-grid">'+
-            '<div class="acc-item"><label>Micrófono</label><select id="a-micro"><option>No</option><option>OK</option><option>Dañado</option></select></div>'+
-            '<div class="acc-item"><label>Batería N°</label><input id="a-bateria" placeholder="N° o No"></div>'+
-            '<div class="acc-item"><label>Antena</label><select id="a-antena"><option>No</option><option>OK</option><option>Dañada</option></select></div>'+
-            '<div class="acc-item"><label>Carcasa</label><select id="a-carcasa"><option>No</option><option>OK</option><option>Dañada</option></select></div>'+
-            '<div class="acc-item"><label>Perillas</label><select id="a-perillas"><option>No</option><option>1 OK</option><option>2 OK</option><option>Dañadas</option></select></div>'+
-            '<div class="acc-item"><label>Pernos</label><select id="a-pernos"><option>No</option><option>OK</option></select></div>'+
-            '<div class="acc-item"><label>Mariposas</label><select id="a-mariposas"><option>No</option><option>OK</option></select></div>'+
-            '<div class="acc-item"><label>Pinza</label><select id="a-pinza"><option>Sin pinza</option><option>Con pinza</option></select></div>'+
-            '<div class="acc-item"><label>Cargador</label><select id="a-cargador"><option>No</option><option>OK</option><option>Requiere</option></select></div>'+
+          '<div style="display:flex;flex-direction:column;gap:6px">'+
+            '<div style="display:grid;grid-template-columns:120px 160px 1fr;gap:8px;padding:6px 0;border-bottom:1px solid #f0f0f0">'+
+              '<span style="font-size:11px;font-weight:600;color:#aaa">ACCESORIO</span>'+
+              '<span style="font-size:11px;font-weight:600;color:#aaa">ESTADO</span>'+
+              '<span style="font-size:11px;font-weight:600;color:#aaa">OBSERVACIÓN</span>'+
+            '</div>'+
+            '<div style="display:grid;grid-template-columns:120px 160px 1fr;gap:8px;align-items:center">'+
+              '<label style="font-size:13px;font-weight:500">Micrófono</label>'+
+              '<select id="a-micro" style="padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-family:inherit;font-size:12px"><option value="No aplica">No aplica</option><option value="OK">OK</option><option value="Dañado">Dañado</option><option value="No">No</option></select>'+
+              '<input id="a-micro-obs" placeholder="Observación..." style="padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-family:inherit;font-size:12px;width:100%">'+
+            '</div>'+
+            '<div style="display:grid;grid-template-columns:120px 160px 1fr;gap:8px;align-items:center">'+
+              '<label style="font-size:13px;font-weight:500">Batería</label>'+
+              '<select id="a-bateria" style="padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-family:inherit;font-size:12px"><option value="No aplica">No aplica</option><option value="OK">OK</option><option value="Dañada">Dañada</option><option value="No">No</option></select>'+
+              '<input id="a-bateria-num" placeholder="N° modelo batería / observación..." style="padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-family:inherit;font-size:12px;width:100%">'+
+            '</div>'+
+            '<div style="display:grid;grid-template-columns:120px 160px 1fr;gap:8px;align-items:center">'+
+              '<label style="font-size:13px;font-weight:500">Antena</label>'+
+              '<select id="a-antena" style="padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-family:inherit;font-size:12px"><option value="No aplica">No aplica</option><option value="OK">OK</option><option value="Dañada">Dañada</option><option value="No">No</option></select>'+
+              '<input id="a-antena-obs" placeholder="Observación..." style="padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-family:inherit;font-size:12px;width:100%">'+
+            '</div>'+
+            '<div style="display:grid;grid-template-columns:120px 160px 1fr;gap:8px;align-items:center">'+
+              '<label style="font-size:13px;font-weight:500">Carcasa</label>'+
+              '<select id="a-carcasa" style="padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-family:inherit;font-size:12px"><option value="No aplica">No aplica</option><option value="OK">OK</option><option value="Dañada">Dañada</option><option value="No">No</option></select>'+
+              '<input id="a-carcasa-obs" placeholder="Observación..." style="padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-family:inherit;font-size:12px;width:100%">'+
+            '</div>'+
+            '<div style="display:grid;grid-template-columns:120px 160px 1fr;gap:8px;align-items:center">'+
+              '<label style="font-size:13px;font-weight:500">Perillas</label>'+
+              '<select id="a-perillas" style="padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-family:inherit;font-size:12px"><option value="No aplica">No aplica</option><option value="OK">OK</option><option value="Dañadas">Dañadas</option><option value="No">No</option></select>'+
+              '<input id="a-perillas-obs" placeholder="Observación..." style="padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-family:inherit;font-size:12px;width:100%">'+
+            '</div>'+
+            '<div style="display:grid;grid-template-columns:120px 160px 1fr;gap:8px;align-items:center">'+
+              '<label style="font-size:13px;font-weight:500">Pernos</label>'+
+              '<select id="a-pernos" style="padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-family:inherit;font-size:12px"><option value="No aplica">No aplica</option><option value="OK">OK</option><option value="Dañados">Dañados</option><option value="No">No</option></select>'+
+              '<input id="a-pernos-obs" placeholder="Observación..." style="padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-family:inherit;font-size:12px;width:100%">'+
+            '</div>'+
+            '<div style="display:grid;grid-template-columns:120px 160px 1fr;gap:8px;align-items:center">'+
+              '<label style="font-size:13px;font-weight:500">Mariposas</label>'+
+              '<select id="a-mariposas" style="padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-family:inherit;font-size:12px"><option value="No aplica">No aplica</option><option value="OK">OK</option><option value="Dañadas">Dañadas</option><option value="No">No</option></select>'+
+              '<input id="a-mariposas-obs" placeholder="Observación..." style="padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-family:inherit;font-size:12px;width:100%">'+
+            '</div>'+
+            '<div style="display:grid;grid-template-columns:120px 160px 1fr;gap:8px;align-items:center">'+
+              '<label style="font-size:13px;font-weight:500">Pinza</label>'+
+              '<select id="a-pinza" style="padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-family:inherit;font-size:12px"><option value="No aplica">No aplica</option><option value="OK">OK</option><option value="Dañada">Dañada</option><option value="No">No</option></select>'+
+              '<input id="a-pinza-obs" placeholder="Observación..." style="padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-family:inherit;font-size:12px;width:100%">'+
+            '</div>'+
+            '<div style="display:grid;grid-template-columns:120px 160px 1fr;gap:8px;align-items:center">'+
+              '<label style="font-size:13px;font-weight:500">Cargador</label>'+
+              '<select id="a-cargador" style="padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-family:inherit;font-size:12px"><option value="No aplica">No aplica</option><option value="OK">OK</option><option value="Dañado">Dañado</option><option value="No">No</option></select>'+
+              '<input id="a-cargador-obs" placeholder="Observación..." style="padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-family:inherit;font-size:12px;width:100%">'+
+            '</div>'+
           '</div>'+
         '</div>'+
 
@@ -328,7 +466,7 @@ function renderApp() {
               '<select id="f-tecnico"><option value="">Sin asignar</option></select>'+
             '</div>'+
             '<div class="field"><label>Estado inicial</label>'+
-              '<select id="f-estado"><option>En revisión</option><option>Esperando repuesto</option><option>En reparación</option><option>Listo para entrega</option><option>Entregado</option><option>Garantía</option></select>'+
+              '<select id="f-estado"><option>Ingreso de equipo</option><option>En revisión</option><option>Esperando repuesto</option><option>En reparación</option><option>Listo para entrega</option><option>Entregado</option><option>Garantía</option></select>'+
             '</div>'+
           '</div>'+
           '<div class="field"><label>Garantía</label><input id="f-garantia" placeholder="ej: 30 días mano de obra"></div>'+
@@ -421,6 +559,7 @@ function renderApp() {
           '<div class="field">'+
             '<label>Estado actual</label>'+
             '<select id="inf-estado">'+
+              '<option>Ingreso de equipo</option>'+
               '<option>Recepcionado en laboratorio</option>'+
               '<option>En revisión</option>'+
               '<option>Esperando repuesto</option>'+
@@ -634,7 +773,7 @@ function checkHistorial(serie) {
   else al.classList.add('hidden')
 }
 
-function guardarOT() {
+async function guardarOT() {
   const reqs = [['f-cliente','Cliente'],['f-marca','Marca'],['f-modelo','Modelo'],['f-servicio','Tipo de servicio']]
   for(let i=0;i<reqs.length;i++) { if(!val(reqs[i][0])) { showAlert('save-alert','Por favor completa el campo: '+reqs[i][1],'warning',4000); return } }
   const editId = document.getElementById('_editing_id')?.value
@@ -648,7 +787,8 @@ function guardarOT() {
     fono:val('f-fono'), direccion:val('f-direccion'), ciudad:val('f-ciudad'),
     tipo:val('f-tipo'), marca:val('f-marca'), modelo:val('f-modelo'), serie:val('f-serie'),
     observaciones:val('f-observaciones'), fotos:photoDataURLs,
-    accs:{micro:val('a-micro'),bateria:val('a-bateria'),antena:val('a-antena'),carcasa:val('a-carcasa'),perillas:val('a-perillas'),pernos:val('a-pernos'),mariposas:val('a-mariposas'),pinza:val('a-pinza'),cargador:val('a-cargador')},
+    subtipo:val('f-subtipo'),
+    accs:{micro:val('a-micro'),bateria:val('a-bateria'),bateriaNum:val('a-bateria-num'),antena:val('a-antena'),carcasa:val('a-carcasa'),perillas:val('a-perillas'),pernos:val('a-pernos'),mariposas:val('a-mariposas'),pinza:val('a-pinza'),cargador:val('a-cargador')},
     informe:'', repuestos:[], mdo:'',
     banda:'', frecuencias:'', canales:'', params:{}
   }
@@ -659,8 +799,10 @@ function guardarOT() {
     data.frecuencias=prevData.frecuencias||''; data.canales=prevData.canales||''
     data.params=prevData.params||{}
   }
-  if(editId) { const idx=OTs.findIndex(function(x){return x.id===editId}); if(idx>=0) OTs[idx]=data }
-  else { OTs.unshift(data); upsertCliente(data) }
+  // Save to Supabase
+  await saveOT(data)
+  if(!editId) { OTs.unshift(data); await upsertCliente(data) }
+  else { const idx=OTs.findIndex(function(x){return x.id===editId}); if(idx>=0) OTs[idx]=data }
 
   // Notificar al técnico si se asignó uno
   if(tecnicoAsignado) {
@@ -675,9 +817,13 @@ function guardarOT() {
   if(!editId) resetForm()
 }
 
-function upsertCliente(data) {
+async function upsertCliente(data) {
   const exists = Clientes.find(function(c){return (c.rut&&c.rut===data.rut)||c.nombre.toLowerCase()===data.cliente.toLowerCase()})
-  if(!exists&&data.cliente) { Clientes.push({id:Date.now().toString(),nombre:data.cliente,rut:data.rut,fono:data.fono,direccion:data.direccion,ciudad:data.ciudad,contacto:data.solicitado,email:'',giro:'',obs:''}); saveAll() }
+  if(!exists&&data.cliente) {
+    const newC = {id:Date.now().toString(),nombre:data.cliente,rut:data.rut||null,fono:data.fono||null,direccion:data.direccion||null,ciudad:data.ciudad||null,contacto:data.solicitado||null,email:null,giro:null,obs:null}
+    Clientes.push(newC)
+    await SB.upsert('clientes', newC, 'id')
+  }
 }
 
 function resetForm() {
@@ -708,7 +854,7 @@ function openInforme(id) {
 
   // Semáforo de estados
   const allEstados = [
-    {key:'ingresado', label:'Ingresado', icon:'ti-door-enter'},
+    {key:'ingreso', label:'Ingreso equipo', icon:'ti-door-enter'},
     {key:'recepcionado', label:'Recepcionado', icon:'ti-clipboard-check'},
     {key:'revision', label:'En revisión', icon:'ti-search'},
     {key:'espera', label:'Esp. repuesto', icon:'ti-clock'},
@@ -717,9 +863,11 @@ function openInforme(id) {
     {key:'entregado', label:'Entregado', icon:'ti-truck'}
   ]
   const estadoMap = {
-    'En revisión':'revision','Recepcionado en laboratorio':'recepcionado',
-    'Esperando repuesto':'espera','En reparación':'reparacion',
-    'Listo para entrega':'listo','Entregado':'entregado','Garantía':'entregado'
+    'Ingreso de equipo':'ingreso',
+    'Recepcionado en laboratorio':'recepcionado',
+    'En revisión':'revision','Esperando repuesto':'espera',
+    'En reparación':'reparacion','Listo para entrega':'listo',
+    'Entregado':'entregado','Garantía':'entregado'
   }
   const currentKey = estadoMap[o.estado] || 'ingresado'
   const currentIdx = allEstados.findIndex(function(e){return e.key===currentKey})
@@ -753,17 +901,41 @@ function openInforme(id) {
   const rAccs = document.getElementById('inf-r-accs')
   if(rCliente) rCliente.textContent = o.cliente||'-'
   if(rContacto) rContacto.textContent = (o.solicitado||'-')+' · '+(o.fono||'-')
-  if(rEquipo) rEquipo.textContent = (o.tipo||'')+' '+o.marca+' '+o.modelo
+  const tipoLabel = {'radio':'Radio','duplexor':'Duplexor','antena':'Antena','regulador':'Regulador de carga','conversor':'Conversor de voltaje','otro':'Otro'}
+  const subtipoLabel = {'portatil':'Portátil','movil':'Móvil','base':'Base','repetidora':'Repetidora','handheld':'Handheld'}
+  const tipoStr = (tipoLabel[o.tipo]||o.tipo||'') + (o.subtipo ? ' — '+(subtipoLabel[o.subtipo]||o.subtipo) : '')
+  if(rEquipo) rEquipo.textContent = tipoStr+' '+o.marca+' '+o.modelo
   if(rSerie) rSerie.textContent = o.serie||'-'
   if(rObs) rObs.textContent = o.observaciones||'Sin observaciones'
   if(rAccs && o.accs) {
-    const accsMap = {micro:'Micrófono',bateria:'Batería',antena:'Antena',carcasa:'Carcasa',perillas:'Perillas',pernos:'Pernos',mariposas:'Mariposas',pinza:'Pinza',cargador:'Cargador'}
-    rAccs.innerHTML = Object.entries(accsMap).map(function(entry){
-      const v = o.accs[entry[0]]||'No'
-      const ok = v==='OK'||v==='Con pinza'||v==='1 OK'||v==='2 OK'||(entry[0]==='bateria'&&v&&v!=='No')
-      return '<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:500;background:'+(ok?'#DCFCE7':'#f5f5f5')+';color:'+(ok?'#15803d':'#aaa')+'">'+
-        '<i class="ti '+(ok?'ti-check':'ti-x')+'" style="font-size:10px"></i>'+entry[1]+': '+v+'</span>'
-    }).join('')
+    const accsMap = [
+      {key:'micro',obsKey:'microObs',label:'Micrófono'},
+      {key:'bateria',obsKey:'bateriaNum',label:'Batería'},
+      {key:'antena',obsKey:'antenaObs',label:'Antena'},
+      {key:'carcasa',obsKey:'carcasaObs',label:'Carcasa'},
+      {key:'perillas',obsKey:'perillasObs',label:'Perillas'},
+      {key:'pernos',obsKey:'pernosObs',label:'Pernos'},
+      {key:'mariposas',obsKey:'maripososObs',label:'Mariposas'},
+      {key:'pinza',obsKey:'pinzaObs',label:'Pinza'},
+      {key:'cargador',obsKey:'cargadorObs',label:'Cargador'}
+    ]
+    rAccs.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:12px">'+
+      '<thead><tr><th style="text-align:left;padding:4px 8px;color:#aaa;font-size:11px;border-bottom:1px solid #f0f0f0">Accesorio</th><th style="text-align:left;padding:4px 8px;color:#aaa;font-size:11px;border-bottom:1px solid #f0f0f0">Estado</th><th style="text-align:left;padding:4px 8px;color:#aaa;font-size:11px;border-bottom:1px solid #f0f0f0">Observación</th></tr></thead><tbody>'+
+      accsMap.map(function(a){
+        const v = (o.accs&&o.accs[a.key])||'No aplica'
+        const obs = (o.accs&&o.accs[a.obsKey])||''
+        const ok = v==='OK'
+        const dmg = v==='Dañado'||v==='Dañada'||v==='Dañadas'||v==='Dañados'
+        const na = v==='No aplica'
+        const color = ok?'#15803d':dmg?'#dc2626':na?'#aaa':'#1a1a1a'
+        const bg = ok?'#DCFCE7':dmg?'#FEF2F2':na?'#f5f5f5':'#fff'
+        return '<tr style="border-bottom:1px solid #f5f5f4">'+
+          '<td style="padding:5px 8px;font-weight:500">'+a.label+'</td>'+
+          '<td style="padding:5px 8px"><span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;background:'+bg+';color:'+color+'">'+v+'</span></td>'+
+          '<td style="padding:5px 8px;color:#555;font-size:11px">'+(obs||'-')+'</td>'+
+        '</tr>'
+      }).join('')+
+    '</tbody></table>'
   }
 
   // Technical fields
@@ -781,7 +953,7 @@ function openInforme(id) {
   if(!document.getElementById('repuestos-container').children.length) addRepuesto()
 }
 
-function guardarInforme() {
+async function guardarInforme() {
   const id = val('inf-ot-id'); if(!id) return
   const o = OTs.find(function(x){return x.id===id}); if(!o) return
   const repuestos=[]
@@ -811,7 +983,10 @@ function guardarInforme() {
     sens_i:val('p-sens-i'),sens_f:val('p-sens-f'),
     bat_i:val('p-bat-i'),bat_f:val('p-bat-f')
   }
-  saveAll(); updateBadgeSol()
+  await saveOT(o)
+  const otIdx = OTs.findIndex(function(x){return x.id===o.id})
+  if(otIdx>=0) OTs[otIdx]=o
+  updateBadgeSol()
   const msg = sinStock.length ? sinStock.length+' repuesto(s) sin stock. Solicitud enviada al admin.' : 'Informe guardado correctamente.'
   showAlert('inf-alert', msg, sinStock.length?'warning':'success')
   // Refresh semaforo
@@ -879,7 +1054,20 @@ function openOT(id) {
     setVal('f-estado',o.estado); setVal('f-tecnico',o.tecnico||''); setVal('f-garantia',o.garantia||'')
     setVal('f-cliente',o.cliente); setVal('f-rut',o.rut||''); setVal('f-solicitado',o.solicitado||'')
     setVal('f-fono',o.fono||''); setVal('f-direccion',o.direccion||''); setVal('f-ciudad',o.ciudad||'')
-    setVal('f-tipo',o.tipo||''); setVal('f-marca',o.marca); setVal('f-modelo',o.modelo); setVal('f-serie',o.serie||'')
+    setVal('f-tipo',o.tipo||''); onTipoChange(o.tipo||'')
+    setTimeout(function(){setVal('f-subtipo',o.subtipo||'')},50)
+    setVal('f-marca',o.marca); setVal('f-modelo',o.modelo); setVal('f-serie',o.serie||'')
+    if(o.accs){
+      setVal('a-micro',o.accs.micro||'No aplica'); setVal('a-micro-obs',o.accs.microObs||'')
+      setVal('a-bateria',o.accs.bateria||'No aplica'); setVal('a-bateria-num',o.accs.bateriaNum||'')
+      setVal('a-antena',o.accs.antena||'No aplica'); setVal('a-antena-obs',o.accs.antenaObs||'')
+      setVal('a-carcasa',o.accs.carcasa||'No aplica'); setVal('a-carcasa-obs',o.accs.carcasaObs||'')
+      setVal('a-perillas',o.accs.perillas||'No aplica'); setVal('a-perillas-obs',o.accs.perillasObs||'')
+      setVal('a-pernos',o.accs.pernos||'No aplica'); setVal('a-pernos-obs',o.accs.pernosObs||'')
+      setVal('a-mariposas',o.accs.mariposas||'No aplica'); setVal('a-mariposas-obs',o.accs.maripososObs||'')
+      setVal('a-pinza',o.accs.pinza||'No aplica'); setVal('a-pinza-obs',o.accs.pinzaObs||'')
+      setVal('a-cargador',o.accs.cargador||'No aplica'); setVal('a-cargador-obs',o.accs.cargadorObs||'')
+    }
     setVal('f-observaciones',o.observaciones||'')
     photoDataURLs=o.fotos||[]; renderPhotoGrid()
     let hi=document.getElementById('_editing_id')
@@ -926,17 +1114,28 @@ function showFormCliente(id) {
     '<button class="btn primary" style="width:100%;margin-top:4px" onclick="saveCliente(\''+(id||'')+'\')"><i class="ti ti-device-floppy"></i> Guardar cliente</button>')
 }
 
-function saveCliente(id) {
+async function saveCliente(id) {
   const nombre=document.getElementById('mc-nombre')?.value?.trim(); if(!nombre){alert('El nombre es obligatorio');return}
-  const data={nombre,rut:document.getElementById('mc-rut')?.value?.trim()||'',giro:document.getElementById('mc-giro')?.value?.trim()||'',contacto:document.getElementById('mc-contacto')?.value?.trim()||'',fono:document.getElementById('mc-fono')?.value?.trim()||'',email:document.getElementById('mc-email')?.value?.trim()||'',ciudad:document.getElementById('mc-ciudad')?.value?.trim()||'',direccion:document.getElementById('mc-dir')?.value?.trim()||'',obs:document.getElementById('mc-obs')?.value?.trim()||''}
-  if(id){const idx=Clientes.findIndex(function(c){return c.id===id});if(idx>=0)Clientes[idx]=Object.assign({},Clientes[idx],data)}
-  else Clientes.push(Object.assign({id:Date.now().toString()},data))
-  saveAll();closeModal();renderClientesList(Clientes)
+  const data={nombre,rut:document.getElementById('mc-rut')?.value?.trim()||null,giro:document.getElementById('mc-giro')?.value?.trim()||null,contacto:document.getElementById('mc-contacto')?.value?.trim()||null,fono:document.getElementById('mc-fono')?.value?.trim()||null,email:document.getElementById('mc-email')?.value?.trim()||null,ciudad:document.getElementById('mc-ciudad')?.value?.trim()||null,direccion:document.getElementById('mc-dir')?.value?.trim()||null,obs:document.getElementById('mc-obs')?.value?.trim()||null}
+  if(id){
+    const idx=Clientes.findIndex(function(c){return c.id===id})
+    if(idx>=0) Clientes[idx]=Object.assign({},Clientes[idx],data)
+    await SB.update('clientes', id, data)
+  } else {
+    const newC = Object.assign({id:Date.now().toString()},data)
+    Clientes.push(newC)
+    await SB.insert('clientes', newC)
+  }
+  closeModal();renderClientesList(Clientes)
 }
 function editCliente(id){showFormCliente(id)}
-function deleteCliente(id){
+async function deleteCliente(id){
   const c=Clientes.find(function(x){return x.id===id});if(!c)return
-  if(confirm('Eliminar cliente: '+c.nombre+'?')){Clientes=Clientes.filter(function(x){return x.id!==id});saveAll();renderClientesList(Clientes)}
+  if(confirm('Eliminar cliente: '+c.nombre+'?')){
+    Clientes=Clientes.filter(function(x){return x.id!==id})
+    await SB.delete('clientes', id)
+    renderClientesList(Clientes)
+  }
 }
 
 // ─── EQUIPOS ─────────────────────────────────────────────────
@@ -1005,20 +1204,30 @@ function showAddItem(id) {
     '<button class="btn primary" style="width:100%;margin-top:8px" onclick="saveItem(\''+(id||'')+'\')"><i class="ti ti-device-floppy"></i> Guardar</button>')
   if(i) setTimeout(function(){setVal('m-cat',i.categoria)},50)
 }
-function saveItem(id) {
+async function saveItem(id) {
   const codigo=val('m-codigo').trim();const desc=val('m-desc').trim()
   if(!codigo||!desc){alert('Código y descripción son obligatorios');return}
-  if(id){const item=Inventario.find(function(i){return i.id===id});if(item){item.codigo=codigo;item.descripcion=desc;item.categoria=val('m-cat');item.cantidad=parseInt(val('m-qty'))||0;item.stockMin=parseInt(val('m-min'))||2;item.obs=val('m-obs')}}
-  else Inventario.push({id:Date.now().toString(),codigo,descripcion:desc,categoria:val('m-cat'),cantidad:parseInt(val('m-qty'))||0,stockMin:parseInt(val('m-min'))||2,obs:val('m-obs')})
-  saveAll();closeModal();renderInventario();showAlert('inv-alert','Item guardado.','success')
+  const data={codigo,descripcion:desc,categoria:val('m-cat'),cantidad:parseInt(val('m-qty'))||0,stock_min:parseInt(val('m-min'))||2,obs:val('m-obs')||null}
+  if(id){
+    const item=Inventario.find(function(i){return i.id===id})
+    if(item){Object.assign(item,data);item.stockMin=data.stock_min}
+    await SB.update('inventario', id, data)
+  } else {
+    const newI=Object.assign({id:Date.now().toString()},data)
+    newI.stockMin=data.stock_min
+    Inventario.push(newI)
+    await SB.insert('inventario', newI)
+  }
+  closeModal();renderInventario();showAlert('inv-alert','Item guardado.','success')
 }
-function deleteItem(id){if(confirm('Eliminar este item?')){Inventario=Inventario.filter(function(i){return i.id!==id});saveAll();renderInventario()}}
+async function deleteItem(id){if(confirm('Eliminar este item?')){Inventario=Inventario.filter(function(i){return i.id!==id});await SB.delete('inventario',id);renderInventario()}}
 
 // ─── REPUESTOS EN INFORME ────────────────────────────────────
 function addRepuesto(data) {
   const c=document.getElementById('repuestos-container'); if(!c) return
   const inv=data?.codigo?Inventario.find(function(i){return i.codigo===data.codigo}):null
-  const stockHtml=inv?'<span style="font-size:11px;color:'+(inv.cantidad<=inv.stockMin?'#dc2626':'#16a34a')+';font-weight:600">'+inv.cantidad+' en stock</span>':'<span style="font-size:11px;color:#aaa">-</span>'
+  const invMin = inv ? (inv.stock_min||inv.stockMin||2) : 2
+  const stockHtml=inv?'<span style="font-size:11px;color:'+(inv.cantidad<=invMin?'#dc2626':'#16a34a')+';font-weight:600">'+inv.cantidad+' en stock</span>':'<span style="font-size:11px;color:#aaa">-</span>'
   const row=document.createElement('div'); row.className='rep-row'; row.style.gridTemplateColumns='60px 100px 1fr 90px 28px'
   row.innerHTML='<input type="number" value="'+(data?.qty||1)+'" min="1" style="text-align:center">'+
     '<input type="text" value="'+(data?.codigo||'')+'" placeholder="Código" oninput="updateStockInfo(this)">'+
@@ -1051,7 +1260,7 @@ function seleccionarRepuesto(id){const item=Inventario.find(function(i){return i
 // ─── SOLICITUDES ─────────────────────────────────────────────
 function renderSolicitudes() {
   const el=document.getElementById('solicitudes-list'); if(!el) return
-  let list=isAdmin()?Solicitudes:Solicitudes.filter(function(s){return s.solicitadoPor===currentUser.nombre})
+  let list=isAdmin()?Solicitudes:Solicitudes.filter(function(s){return (s.solicitado_por||s.solicitadoPor)===currentUser.nombre})
   if(!list.length){el.innerHTML='<div class="empty-state"><i class="ti ti-bell"></i><p>Sin solicitudes.</p></div>';return}
   el.innerHTML='<table><thead><tr><th>Fecha</th><th>OT</th><th>Código</th><th>Descripción</th><th>Cant.</th><th>Solicitado por</th><th>Estado</th>'+(isAdmin()?'<th>Acción</th>':'')+'</tr></thead><tbody>'+
     list.map(function(s){return '<tr><td>'+s.fecha+'</td><td><span class="orden-num">'+s.ot+'</span></td><td style="font-family:monospace">'+s.codigo+'</td><td>'+s.desc+'</td><td>'+s.qty+'</td><td>'+s.solicitadoPor+'</td>'+
@@ -1068,9 +1277,14 @@ function aprobarSolicitud(id) {
   else Inventario.push({id:Date.now().toString(),codigo:s.codigo,descripcion:s.desc,categoria:'Otros',cantidad:reponer,stockMin:2,obs:''})
   s.estado='Aprobado'; saveAll(); renderSolicitudes(); updateBadgeSol()
 }
-function rechazarSolicitud(id) {
+async function rechazarSolicitud(id) {
   const s=Solicitudes.find(function(x){return x.id===id}); if(!s) return
-  if(confirm('Rechazar solicitud de "'+s.desc+'"?')){s.estado='Rechazado';saveAll();renderSolicitudes();updateBadgeSol()}
+  const desc = s.descripcion||s.desc||''
+  if(confirm('Rechazar solicitud de "'+desc+'"?')){
+    s.estado='Rechazado'
+    await SB.update('solicitudes', id, {estado:'Rechazado'})
+    renderSolicitudes(); updateBadgeSol()
+  }
 }
 
 // ─── USUARIOS ────────────────────────────────────────────────
@@ -1098,14 +1312,22 @@ function showAddUsuario(id) {
     '<button class="btn primary" style="width:100%;margin-top:8px" onclick="saveUsuario(\''+(id||'')+'\')"><i class="ti ti-device-floppy"></i> Guardar</button>')
   if(u) setTimeout(function(){setVal('m-urol',u.rol)},50)
 }
-function saveUsuario(id) {
+async function saveUsuario(id) {
   const nombre=val('m-unombre').trim();const usuario=val('m-uusuario').trim();const pass=val('m-upass').trim();const rol=val('m-urol')
   if(!nombre||!usuario||!pass){alert('Todos los campos son obligatorios');return}
-  if(id){const u=Usuarios.find(function(x){return x.id===id});if(u){u.nombre=nombre;u.usuario=usuario;u.password=pass;u.rol=rol}}
-  else Usuarios.push({id:Date.now().toString(),nombre,usuario,password:pass,rol})
-  saveAll();closeModal();renderUsuarios()
+  const data={nombre,usuario,password:pass,rol}
+  if(id){
+    const u=Usuarios.find(function(x){return x.id===id})
+    if(u) Object.assign(u,data)
+    await SB.update('usuarios', id, data)
+  } else {
+    const newU=Object.assign({id:Date.now().toString()},data)
+    Usuarios.push(newU)
+    await SB.insert('usuarios', newU)
+  }
+  closeModal();renderUsuarios()
 }
-function deleteUsuario(id){if(confirm('Eliminar este usuario?')){Usuarios=Usuarios.filter(function(u){return u.id!==id});saveAll();renderUsuarios()}}
+async function deleteUsuario(id){if(confirm('Eliminar este usuario?')){Usuarios=Usuarios.filter(function(u){return u.id!==id});await SB.delete('usuarios',id);renderUsuarios()}}
 
 // ─── DASHBOARD ───────────────────────────────────────────────
 function renderDashboard() {
@@ -1175,7 +1397,7 @@ function imprimirInforme() {
 // ─── TIPO DE EQUIPO DINÁMICO ─────────────────────────────────
 function onTipoChange(tipo) {
   const wrap = document.getElementById('f-subtipo-wrap')
-  if(wrap) wrap.style.display = tipo && tipo !== '' ? 'block' : 'none'
+  if(wrap) wrap.style.display = tipo === 'radio' ? 'block' : 'none'
 }
 
 function renderParamsForTipo(tipo, params) {
@@ -1274,29 +1496,29 @@ function renderParamsForTipo(tipo, params) {
 }
 
 // ─── SOLICITUD DE INSUMOS ────────────────────────────────────
-function enviarSolicitudInsumo() {
+async function enviarSolicitudInsumo() {
   const desc = document.getElementById('sol-desc')?.value?.trim()
   const qty = document.getElementById('sol-qty')?.value || '1'
   const unidad = document.getElementById('sol-unidad')?.value || 'unidad(es)'
   const obs = document.getElementById('sol-obs')?.value?.trim() || ''
   if(!desc) { alert('Por favor ingresa el insumo que necesitas'); return }
-  Solicitudes.unshift({
+  const sol = {
     id: Date.now().toString()+Math.random(),
     codigo: 'INSUMO',
-    desc: desc,
+    descripcion: desc,
     qty: qty + ' ' + unidad,
-    solicitadoPor: currentUser.nombre,
+    solicitado_por: currentUser.nombre,
     fecha: new Date().toISOString().split('T')[0],
     ot: '-',
     estado: 'Pendiente',
-    obs: obs,
+    obs: obs||null,
     tipo: 'insumo'
-  })
-  saveAll()
+  }
+  Solicitudes.unshift(sol)
+  await SB.insert('solicitudes', sol)
   document.getElementById('sol-desc').value = ''
   document.getElementById('sol-qty').value = '1'
   document.getElementById('sol-obs').value = ''
-  showAlert && showAlert('sol-alert', 'Solicitud enviada al administrador.', 'success')
   renderSolicitudes()
   updateBadgeSol()
 }
