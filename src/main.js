@@ -113,7 +113,7 @@ function getTecnicos() { return Usuarios.filter(u=>u.rol==='tecnico') }
 
 // ─── NOTIFICACIONES ──────────────────────────────────────────
 async function crearNotificacion(paraUsuarioId, tipo, mensaje, otId) {
-  const n = { id: Date.now().toString()+Math.random(), para_usuario_id: paraUsuarioId, tipo, mensaje, ot_id: otId||null, leida: false }
+  const n = { id: crypto.randomUUID()+Math.random(), para_usuario_id: paraUsuarioId, tipo, mensaje, ot_id: otId||null, leida: false }
   Notificaciones.unshift({...n, paraUsuarioId, otId})
   await SB.insert('notificaciones', n)
 }
@@ -778,7 +778,7 @@ async function guardarOT() {
   const tecnicoAsignado = val('f-tecnico')
   console.log('Guardando OT con tecnico:', tecnicoAsignado)
   const data = {
-    id: editId||Date.now().toString(),
+    id: editId||crypto.randomUUID(),
     orden:val('f-orden'), fecha:val('f-fecha'), servicio:val('f-servicio'),
     estado:val('f-estado')||'En revisión', tecnico:tecnicoAsignado, garantia:val('f-garantia'),
     cliente:val('f-cliente'), rut:val('f-rut'), solicitado:val('f-solicitado'),
@@ -818,7 +818,7 @@ async function guardarOT() {
 async function upsertCliente(data) {
   const exists = Clientes.find(function(c){return (c.rut&&c.rut===data.rut)||c.nombre.toLowerCase()===data.cliente.toLowerCase()})
   if(!exists&&data.cliente) {
-    const newC = {id:Date.now().toString(),nombre:data.cliente,rut:data.rut||null,fono:data.fono||null,direccion:data.direccion||null,ciudad:data.ciudad||null,contacto:data.solicitado||null,email:null,giro:null,obs:null}
+    const newC = {id:crypto.randomUUID(),nombre:data.cliente,rut:data.rut||null,fono:data.fono||null,direccion:data.direccion||null,ciudad:data.ciudad||null,contacto:data.solicitado||null,email:null,giro:null,obs:null}
     Clientes.push(newC)
     await SB.upsert('clientes', newC, 'id')
   }
@@ -967,7 +967,7 @@ async function guardarInforme() {
   })
   if(sinStock.length) {
     sinStock.forEach(function(r){
-      Solicitudes.unshift({id:Date.now().toString()+Math.random(),codigo:r.codigo,desc:r.desc,qty:r.qty,solicitadoPor:currentUser.nombre,fecha:new Date().toISOString().split('T')[0],ot:o.orden,estado:'Pendiente',obs:''})
+      Solicitudes.unshift({id:crypto.randomUUID()+Math.random(),codigo:r.codigo,desc:r.desc,qty:r.qty,solicitadoPor:currentUser.nombre,fecha:new Date().toISOString().split('T')[0],ot:o.orden,estado:'Pendiente',obs:''})
     })
   }
   o.banda=val('inf-banda'); o.frecuencias=val('inf-frecuencias'); o.canales=val('inf-canales')
@@ -1120,7 +1120,7 @@ async function saveCliente(id) {
     if(idx>=0) Clientes[idx]=Object.assign({},Clientes[idx],data)
     await SB.update('clientes', id, data)
   } else {
-    const newC = Object.assign({id:Date.now().toString()},data)
+    const newC = Object.assign({id:crypto.randomUUID()},data)
     Clientes.push(newC)
     await SB.insert('clientes', newC)
   }
@@ -1211,7 +1211,7 @@ async function saveItem(id) {
     if(item){Object.assign(item,data);item.stockMin=data.stock_min}
     await SB.update('inventario', id, data)
   } else {
-    const newI=Object.assign({id:Date.now().toString()},data)
+    const newI=Object.assign({id:crypto.randomUUID()},data)
     newI.stockMin=data.stock_min
     Inventario.push(newI)
     await SB.insert('inventario', newI)
@@ -1272,7 +1272,7 @@ function aprobarSolicitud(id) {
   const reponer=parseInt(prompt('Aprobar solicitud de "'+s.desc+'".\nUnidades a agregar al stock:',s.qty))
   if(isNaN(reponer))return
   if(item)item.cantidad+=reponer
-  else Inventario.push({id:Date.now().toString(),codigo:s.codigo,descripcion:s.desc,categoria:'Otros',cantidad:reponer,stockMin:2,obs:''})
+  else Inventario.push({id:crypto.randomUUID(),codigo:s.codigo,descripcion:s.desc,categoria:'Otros',cantidad:reponer,stockMin:2,obs:''})
   s.estado='Aprobado'; saveAll(); renderSolicitudes(); updateBadgeSol()
 }
 async function rechazarSolicitud(id) {
@@ -1319,7 +1319,7 @@ async function saveUsuario(id) {
     if(u) Object.assign(u,data)
     await SB.update('usuarios', id, data)
   } else {
-    const newU=Object.assign({id:Date.now().toString()},data)
+    const newU=Object.assign({id:crypto.randomUUID()},data)
     Usuarios.push(newU)
     await SB.insert('usuarios', newU)
   }
@@ -1501,7 +1501,7 @@ async function enviarSolicitudInsumo() {
   const obs = document.getElementById('sol-obs')?.value?.trim() || ''
   if(!desc) { alert('Por favor ingresa el insumo que necesitas'); return }
   const sol = {
-    id: Date.now().toString()+Math.random(),
+    id: crypto.randomUUID()+Math.random(),
     codigo: 'INSUMO',
     descripcion: desc,
     qty: qty + ' ' + unidad,
