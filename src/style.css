@@ -90,7 +90,7 @@ tr.clickable:hover td{background:#f9f9f9;cursor:pointer}
 .bar-wrap{display:flex;align-items:center;gap:10px;margin-bottom:8px}
 .bar-bg{flex:1;height:8px;background:#f0f0f0;border-radius:4px;overflow:hidden}
 .bar-fill{height:100%;background:#185FA5;border-radius:4px}
-@media(max-width:768px){
+@media(max-width:768px){.hamburger{display:flex!important;align-items:center;background:none;border:none;cursor:pointer;font-size:24px;color:#185FA5;padding:4px;margin-right:8px}.mob-sidebar{position:fixed;left:-250px;top:0;bottom:0;width:220px;z-index:200;transition:left 0.25s ease;box-shadow:4px 0 20px rgba(0,0,0,0.2)}.mob-sidebar.open{left:0}.mob-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:199}.mob-overlay.open{display:block}
   .sidebar{display:none}
   .grid2,.grid3,.grid4{grid-template-columns:1fr}
   .acc-grid{grid-template-columns:1fr 1fr}
