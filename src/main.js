@@ -60,9 +60,7 @@ async function saveOT(data) {
   return await SB.upsert('ots', row, 'id')
 }
 
-async function saveCliente(data) {
-  return await SB.upsert('clientes', data, 'id')
-}
+
 
 async function loadAll() {
   try {
