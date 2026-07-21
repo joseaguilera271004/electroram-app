@@ -98,4 +98,3 @@ tr.clickable:hover td{background:#f9f9f9;cursor:pointer}
   .photo-grid{grid-template-columns:repeat(3,1fr)}
   .rep-row{grid-template-columns:50px 1fr 28px}
 }
-</style>
