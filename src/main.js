@@ -297,14 +297,30 @@ const logoSrc = document.querySelector('.sidebar img') ? document.querySelector(
 function openMobMenu() {
   const sidebar = document.querySelector('.sidebar')
   const overlay = document.getElementById('mob-overlay')
-  if(sidebar) { sidebar.style.cssText='position:fixed;left:0;top:0;bottom:0;z-index:200;box-shadow:4px 0 20px rgba(0,0,0,0.2)' }
+  if(sidebar) {
+    sidebar.style.position='fixed'
+    sidebar.style.left='0'
+    sidebar.style.top='0'
+    sidebar.style.bottom='0'
+    sidebar.style.zIndex='200'
+    sidebar.style.boxShadow='4px 0 20px rgba(0,0,0,0.2)'
+    sidebar.style.display='flex'
+  }
   if(overlay) overlay.style.display='block'
 }
 
 function closeMobMenu() {
   const sidebar = document.querySelector('.sidebar')
   const overlay = document.getElementById('mob-overlay')
-  if(sidebar) { sidebar.style.cssText='' }
+  if(sidebar) {
+    sidebar.style.position=''
+    sidebar.style.left=''
+    sidebar.style.top=''
+    sidebar.style.bottom=''
+    sidebar.style.zIndex=''
+    sidebar.style.boxShadow=''
+    sidebar.style.display=''
+  }
   if(overlay) overlay.style.display='none'
 }
 
@@ -314,6 +330,20 @@ function checkMobile() {
   const mainApp = document.getElementById('main-app')
   if(mobTop) mobTop.style.display = isMobile ? 'flex' : 'none'
   if(mainApp) mainApp.style.paddingTop = isMobile ? '52px' : '0'
+  // On desktop, ensure sidebar is visible
+  if(!isMobile) {
+    const sidebar = document.querySelector('.sidebar')
+    if(sidebar) {
+      sidebar.style.display='flex'
+      sidebar.style.position=''
+    }
+  } else {
+    // On mobile, hide sidebar by default
+    const sidebar = document.querySelector('.sidebar')
+    if(sidebar && !sidebar.style.boxShadow) {
+      sidebar.style.display='none'
+    }
+  }
 }
 
 window.addEventListener('resize', checkMobile)
