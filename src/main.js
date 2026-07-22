@@ -569,7 +569,6 @@ function renderApp() {
           '<div class="photo-grid" id="photo-grid"></div>'+
         '</div>'+
       '</div>'+
-    '</div>'+
 
     // ── INFORME TÉCNICO ──
     '<div id="view-informe" class="view hidden">'+
