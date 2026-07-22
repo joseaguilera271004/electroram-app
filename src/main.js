@@ -308,15 +308,15 @@ function renderLogin() {
     '<div class="field"><label>Usuario</label><input id="l-usuario" placeholder="Ingresa tu usuario" onkeydown="if(event.key===\'Enter\')doLogin()"></div>'+
     '<div class="field"><label>Contraseña</label><div style="position:relative">'+
       '<input id="l-password" type="password" placeholder="Ingresa tu contraseña" style="padding-right:38px" onkeydown="if(event.key===\'Enter\')doLogin()">'+
-      '<button type="button" onclick="toggleLoginPassword()" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#aaa;padding:4px;display:flex" title="Ver contraseña"><i class="ti ti-eye" id="l-password-icon"></i></button>'+
+      '<button type="button" onclick="togglePasswordField(\'l-password\',\'l-password-icon\')" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#aaa;padding:4px;display:flex" title="Ver contraseña"><i class="ti ti-eye" id="l-password-icon"></i></button>'+
     '</div></div>'+
     '<button class="btn primary" style="width:100%;margin-top:8px;padding:10px;font-size:14px" onclick="doLogin()"><i class="ti ti-login"></i> Ingresar</button>'+
     '</div></div>'
 }
 
-function toggleLoginPassword() {
-  const inp = document.getElementById('l-password')
-  const icon = document.getElementById('l-password-icon')
+function togglePasswordField(inputId, iconId) {
+  const inp = document.getElementById(inputId)
+  const icon = document.getElementById(iconId)
   if(!inp) return
   const show = inp.type === 'password'
   inp.type = show ? 'text' : 'password'
@@ -643,9 +643,13 @@ function renderApp() {
             '<div><div style="font-size:11px;color:#aaa;font-weight:600;margin-bottom:2px">EQUIPO</div><div id="inf-r-equipo" style="font-size:13px;font-weight:600"></div></div>'+
             '<div><div style="font-size:11px;color:#aaa;font-weight:600;margin-bottom:2px">N° DE SERIE</div><div id="inf-r-serie" style="font-size:13px;font-family:monospace;font-weight:600"></div></div>'+
           '</div>'+
-          '<div style="margin-bottom:10px">'+
+          '<div id="inf-r-accs-wrap" style="margin-bottom:10px">'+
             '<div style="font-size:11px;color:#aaa;font-weight:600;margin-bottom:6px">ACCESORIOS RECIBIDOS</div>'+
             '<div id="inf-r-accs" style="display:flex;flex-wrap:wrap;gap:6px"></div>'+
+          '</div>'+
+          '<div id="inf-r-accsobs-wrap" style="margin-bottom:10px;display:none">'+
+            '<div style="font-size:11px;color:#aaa;font-weight:600;margin-bottom:4px">OBSERVACIÓN DEL EQUIPO AL INGRESO</div>'+
+            '<div id="inf-r-accsobs" style="font-size:13px;color:#555;background:#fff;padding:10px;border-radius:8px;border:1px solid #eee;min-height:40px"></div>'+
           '</div>'+
           '<div style="margin-bottom:10px">'+
             '<div style="font-size:11px;color:#aaa;font-weight:600;margin-bottom:4px">OBSERVACIONES DEL CLIENTE</div>'+
@@ -950,7 +954,7 @@ async function guardarOT() {
     tipo:val('f-tipo'), marca:val('f-marca'), modelo:val('f-modelo'), serie:val('f-serie'),
     observaciones:val('f-observaciones'), fotos:photoDataURLs,
     subtipo:val('f-subtipo'),
-    accs:{micro:val('a-micro'),bateria:val('a-bateria'),bateriaNum:val('a-bateria-num'),antena:val('a-antena'),carcasa:val('a-carcasa'),perillas:val('a-perillas'),pernos:val('a-pernos'),mariposas:val('a-mariposas'),pinza:val('a-pinza'),cargador:val('a-cargador')},
+    accs:{micro:val('a-micro'),bateria:val('a-bateria'),bateriaNum:val('a-bateria-num'),antena:val('a-antena'),carcasa:val('a-carcasa'),perillas:val('a-perillas'),pernos:val('a-pernos'),mariposas:val('a-mariposas'),pinza:val('a-pinza'),cargador:val('a-cargador'),accsObsOtros:val('accs-obs-otros')},
     informe:'', repuestos:[], mdo:'',
     banda:'', frecuencias:'', canales:'', params:{}
   }
@@ -1072,7 +1076,14 @@ function openInforme(id) {
       o.fotos.map(function(src,i){return '<div class="photo-thumb"><img src="'+src+'" alt="Foto '+(i+1)+'"></div>'}).join('') :
       '<div style="font-size:12px;color:#aaa">Sin fotos de ingreso.</div>'
   }
-  if(rAccs && o.accs) {
+  const accsWrap = document.getElementById('inf-r-accs-wrap')
+  const accsObsWrap = document.getElementById('inf-r-accsobs-wrap')
+  const accsObsEl = document.getElementById('inf-r-accsobs')
+  const esRadio = (o.tipo||'radio') === 'radio'
+  if(accsWrap) accsWrap.style.display = esRadio ? '' : 'none'
+  if(accsObsWrap) accsObsWrap.style.display = esRadio ? 'none' : ''
+  if(accsObsEl) accsObsEl.textContent = (o.accs&&o.accs.accsObsOtros) || 'Sin observaciones.'
+  if(rAccs && o.accs && esRadio) {
     const accsMap = [
       {key:'micro',obsKey:'microObs',label:'Micrófono'},
       {key:'bateria',obsKey:'bateriaNum',label:'Batería'},
@@ -1123,6 +1134,19 @@ function openInforme(id) {
 async function guardarInforme() {
   const id = val('inf-ot-id'); if(!id) return
   const o = OTs.find(function(x){return x.id===id}); if(!o) return
+  const estadoSeleccionado = val('inf-estado')
+  const estadosFinales = ['Listo para entrega','Entregado','Garantía']
+  if(estadosFinales.includes(estadoSeleccionado)) {
+    const tipo = o.tipo||'radio'
+    const camposReq = tipo==='duplexor' ?
+      [['inf-frecuencias','Frecuencia RX'],['p-sep','Separación TX/RX'],['p-fe-i','Frec. Error inicial'],['p-fe-f','Frec. Error final'],['p-dev-i','Desviación inicial'],['p-dev-f','Desviación final'],['p-pot-i','Potencia TX inicial'],['p-pot-f','Potencia TX final'],['p-sens-i','Sensibilidad inicial'],['p-sens-f','Sensibilidad final'],['p-bat-i','Batería inicial'],['p-bat-f','Batería final']] :
+      [['p-pot-dir','Potencia directa'],['p-pot-ref','Potencia reflejada'],['p-roe','ROE'],['p-licencias','Licencias cargadas'],['p-version-sw','Versión de firmware']]
+    const faltantes = camposReq.filter(function(c){return !val(c[0]).toString().trim()}).map(function(c){return c[1]})
+    if(faltantes.length) {
+      showAlert('inf-alert','Para marcar el estado "'+estadoSeleccionado+'" debes completar todos los parámetros técnicos. Falta: '+faltantes.join(', ')+'.','warning',7000)
+      return
+    }
+  }
   const repuestos=[]
   document.querySelectorAll('.rep-row').forEach(function(row){
     const inputs=row.querySelectorAll('input')
@@ -1260,6 +1284,7 @@ function openOT(id) {
       setVal('a-mariposas',o.accs.mariposas||'No aplica'); setVal('a-mariposas-obs',o.accs.maripososObs||'')
       setVal('a-pinza',o.accs.pinza||'No aplica'); setVal('a-pinza-obs',o.accs.pinzaObs||'')
       setVal('a-cargador',o.accs.cargador||'No aplica'); setVal('a-cargador-obs',o.accs.cargadorObs||'')
+      setVal('accs-obs-otros',o.accs.accsObsOtros||'')
     }
     setVal('f-observaciones',o.observaciones||'')
     photoDataURLs=o.fotos||[]; renderPhotoGrid()
@@ -1514,23 +1539,31 @@ function showAddUsuario(id) {
     '<div class="field"><label>Nombre completo *</label><input id="m-unombre" value="'+(u?u.nombre:'')+'" placeholder="Juan Pérez"></div>'+
     '<div class="field"><label>Rol *</label><select id="m-urol"><option value="tecnico">Técnico</option><option value="operador">Operador</option><option value="admin">Administrador</option></select></div>'+
     '<div class="field"><label>Usuario *</label><input id="m-uusuario" value="'+(u?u.usuario:'')+'" placeholder="jperez"></div>'+
-    '<div class="field"><label>Contraseña *</label><input id="m-upass" type="password" value="'+(u?u.password:'')+'" placeholder="mínimo 4 caracteres"></div>'+
+    '<div class="field"><label>Contraseña *</label><div style="position:relative">'+
+      '<input id="m-upass" type="password" value="'+(u?u.password:'')+'" placeholder="mínimo 4 caracteres" style="padding-right:38px">'+
+      '<button type="button" onclick="togglePasswordField(\'m-upass\',\'m-upass-icon\')" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#aaa;padding:4px;display:flex" title="Ver contraseña"><i class="ti ti-eye" id="m-upass-icon"></i></button>'+
+    '</div></div>'+
     '</div>'+
     '<button class="btn primary" style="width:100%;margin-top:8px" onclick="saveUsuario(\''+(id||'')+'\')"><i class="ti ti-device-floppy"></i> Guardar</button>')
   if(u) setTimeout(function(){setVal('m-urol',u.rol)},50)
 }
 async function saveUsuario(id) {
-  const nombre=val('m-unombre').trim();const usuario=val('m-uusuario').trim();const pass=val('m-upass').trim();const rol=val('m-urol')
+  const nombre=val('m-unombre').trim();const usuario=val('m-uusuario').trim().toLowerCase();const pass=val('m-upass').trim();const rol=val('m-urol')
   if(!nombre||!usuario||!pass){alert('Todos los campos son obligatorios');return}
+  const dup = Usuarios.find(function(x){return x.usuario===usuario && x.id!==id})
+  if(dup){alert('Ya existe un usuario con ese nombre de usuario. Elige otro.');return}
   const email=val('m-uemail').trim()||null;const data={nombre,usuario,password:pass,rol,email}
   if(id){
     const u=Usuarios.find(function(x){return x.id===id})
+    const prev = u ? Object.assign({},u) : null
     if(u) Object.assign(u,data)
-    await SB.update('usuarios', id, data)
+    const saved = await SB.update('usuarios', id, data)
+    if(!saved){ if(u&&prev) Object.assign(u,prev); alert('No se pudo guardar el usuario. Intenta de nuevo.'); return }
   } else {
     const newU=Object.assign({id:genUUID()},data)
+    const saved = await SB.insert('usuarios', newU)
+    if(!saved){ alert('No se pudo crear el usuario. Intenta de nuevo.'); return }
     Usuarios.push(newU)
-    await SB.insert('usuarios', newU)
   }
   closeModal();renderUsuarios()
 }
@@ -1848,6 +1881,6 @@ window.abrirNotif=abrirNotif; window.OTs=OTs
 window.toggleSidebar=toggleSidebar; window.closeSidebar=closeSidebar
 window.onTipoChange=onTipoChange; window.renderParamsForTipo=renderParamsForTipo
 window.enviarSolicitudInsumo=enviarSolicitudInsumo
-window.closeModal=closeModal; window.toggleLoginPassword=toggleLoginPassword
+window.closeModal=closeModal; window.togglePasswordField=togglePasswordField
 
 renderLogin()
