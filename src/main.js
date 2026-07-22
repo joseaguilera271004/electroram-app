@@ -103,8 +103,9 @@ function genOrden() {
   const d = new Date()
   const dd = String(d.getDate()).padStart(2,'0')
   const mm = String(d.getMonth()+1).padStart(2,'0')
+  const yy = String(d.getFullYear()).slice(2)
   const seq = String(OTs.length+1).padStart(2,'0')
-  return dd+mm+'-'+seq
+  return dd+'/'+mm+'/'+yy+'-'+seq
 }
 function badgeHtml(estado) {
   const map = {'En revisión':'open','En reparación':'repair','Esperando repuesto':'waiting','Listo para entrega':'done','Entregado':'done','Garantía':'warranty','Presupuesto':'budget'}
@@ -577,7 +578,7 @@ function renderApp() {
     // ── INFORME TÉCNICO ──
     '<div id="view-informe" class="view hidden">'+
       '<div class="topbar">'+
-        '<div class="inline"><button class="hamburger" onclick="toggleSidebar()"><i class="ti ti-menu-2"></i></button><div><h1 id="inf-titulo">Informe técnico</h1></div></div>'+
+        '<div class="inline"><button class="hamburger" onclick="toggleSidebar()"><i class="ti ti-menu-2"></i></button><div><h1 id="inf-titulo">Informe técnico</h1><p id="inf-subtitulo"></p></div></div>'+
         '<div class="inline">'+
           '<button class="btn" onclick="imprimirInforme()"><i class="ti ti-printer"></i> Imprimir</button>'+
           '<button class="btn primary" onclick="guardarInforme()"><i class="ti ti-device-floppy"></i> Guardar informe</button>'+
@@ -606,9 +607,13 @@ function renderApp() {
             '<div style="font-size:11px;color:#aaa;font-weight:600;margin-bottom:6px">ACCESORIOS RECIBIDOS</div>'+
             '<div id="inf-r-accs" style="display:flex;flex-wrap:wrap;gap:6px"></div>'+
           '</div>'+
-          '<div>'+
+          '<div style="margin-bottom:10px">'+
             '<div style="font-size:11px;color:#aaa;font-weight:600;margin-bottom:4px">OBSERVACIONES DEL CLIENTE</div>'+
             '<div id="inf-r-obs" style="font-size:13px;color:#555;background:#fff;padding:10px;border-radius:8px;border:1px solid #eee;min-height:40px"></div>'+
+          '</div>'+
+          '<div>'+
+            '<div style="font-size:11px;color:#aaa;font-weight:600;margin-bottom:6px">FOTOS DE INGRESO</div>'+
+            '<div id="inf-r-fotos" class="photo-grid"></div>'+
           '</div>'+
         '</div>'+
 
@@ -825,7 +830,7 @@ function initForm() {
 function nuevaOrdenAntigua() {
   showView('nueva')
   const el = document.getElementById('f-orden')
-  if(el) { el.removeAttribute('readonly'); el.value=''; el.placeholder='ej: 2107-01' }
+  if(el) { el.removeAttribute('readonly'); el.value=''; el.placeholder='ej: 21/07/26-01' }
   showAlert('save-alert','Modo orden antigua: ingresa manualmente el N° de orden y la fecha de recepción.','warning',6000)
 }
 
@@ -1007,6 +1012,12 @@ function openInforme(id) {
   if(rEquipo) rEquipo.textContent = tipoStr+' '+o.marca+' '+o.modelo
   if(rSerie) rSerie.textContent = o.serie||'-'
   if(rObs) rObs.textContent = o.observaciones||'Sin observaciones'
+  const rFotos = document.getElementById('inf-r-fotos')
+  if(rFotos) {
+    rFotos.innerHTML = (o.fotos&&o.fotos.length) ?
+      o.fotos.map(function(src,i){return '<div class="photo-thumb"><img src="'+src+'" alt="Foto '+(i+1)+'"></div>'}).join('') :
+      '<div style="font-size:12px;color:#aaa">Sin fotos de ingreso.</div>'
+  }
   if(rAccs && o.accs) {
     const accsMap = [
       {key:'micro',obsKey:'microObs',label:'Micrófono'},
