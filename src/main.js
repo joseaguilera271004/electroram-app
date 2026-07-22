@@ -307,7 +307,7 @@ function doLogout() {
   if(notifInterval) { clearInterval(notifInterval); notifInterval=null }
   renderLogin()
 setTimeout(function(){
-  if(window.checkMobile) checkMobile()
+  if(window.) ()
   // Attach mobile menu button listener
   var btn = document.getElementById('mob-menu-btn')
   if(btn) btn.addEventListener('click', function(){ openMobMenu() })
@@ -358,9 +358,9 @@ function closeMobMenu() {
   if(overlay) overlay.style.display='none'
 }
 
-function checkMobile() {
+function () {
   const isMobile = window.innerWidth <= 768
-  const mobTop = document.getElementById('mob-topbar')
+  const mobTop = document.getElementById('')
   const mainApp = document.getElementById('main-app')
   if(mobTop) mobTop.style.display = isMobile ? 'flex' : 'none'
   if(mainApp) mainApp.style.paddingTop = isMobile ? '52px' : '0'
@@ -375,12 +375,12 @@ function checkMobile() {
     // On mobile, hide sidebar by default
     const sidebar = document.querySelector('.sidebar')
     if(sidebar && !sidebar.style.boxShadow) {
-      sidebar.style.display='none'
+      
     }
   }
 }
 
-window.addEventListener('resize', checkMobile)
+window.addEventListener('resize', )
 window.openMobMenu = openMobMenu
 window.closeMobMenu = closeMobMenu
 
@@ -398,7 +398,7 @@ function renderApp() {
   document.getElementById('app').innerHTML =
   '<style>@keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}</style>'+
   '<div id="mob-overlay" onclick="closeMobMenu()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:198"></div>'+
-'<div id="mob-topbar" style="display:none;position:fixed;top:0;left:0;right:0;height:52px;background:#fff;border-bottom:1px solid #e5e5e5;align-items:center;padding:0 16px;gap:12px;z-index:150;box-shadow:0 2px 8px rgba(0,0,0,0.06)">'+
+'<div id="" style="display:none;position:fixed;top:0;left:0;right:0;height:52px;background:#fff;border-bottom:1px solid #e5e5e5;align-items:center;padding:0 16px;gap:12px;z-index:150;box-shadow:0 2px 8px rgba(0,0,0,0.06)">'+
 '<button id="mob-menu-btn" style="background:none;border:none;cursor:pointer;font-size:22px;color:#185FA5;padding:4px"><i class="ti ti-menu-2"></i></button>'+
 '<img src="'+logoSrc+'" style="height:32px;width:auto" alt="Electroram">'+
 '</div>'+
@@ -807,7 +807,7 @@ function showView(v) {
       btn._hasListener = true
       btn.addEventListener('click', function(){ openMobMenu() })
     }
-    if(window.checkMobile) checkMobile()
+    if(window.) ()
   }, 100)
   document.querySelectorAll('.view').forEach(function(el){el.classList.add('hidden')})
   document.querySelectorAll('.nav-item').forEach(function(el){el.classList.remove('active')})
