@@ -112,6 +112,38 @@ function badgeHtml(estado) {
   const map = {'En revisión':'open','En reparación':'repair','Esperando repuesto':'waiting','Listo para entrega':'done','Entregado':'done','Garantía':'warranty','Presupuesto':'budget'}
   return '<span class="badge '+(map[estado]||'open')+'">'+estado+'</span>'
 }
+const ESTADOS_SEMAFORO = [
+  {key:'ingreso', label:'Ingreso equipo', icon:'ti-door-enter'},
+  {key:'recepcionado', label:'Recepcionado', icon:'ti-clipboard-check'},
+  {key:'revision', label:'En revisión', icon:'ti-search'},
+  {key:'espera', label:'Esp. repuesto', icon:'ti-clock'},
+  {key:'reparacion', label:'En reparación', icon:'ti-tool'},
+  {key:'listo', label:'Listo', icon:'ti-circle-check'},
+  {key:'entregado', label:'Entregado', icon:'ti-truck'}
+]
+const ESTADO_MAP_SEMAFORO = {
+  'Ingreso de equipo':'ingreso',
+  'Recepcionado en laboratorio':'recepcionado',
+  'En revisión':'revision','Esperando repuesto':'espera',
+  'En reparación':'reparacion','Listo para entrega':'listo',
+  'Entregado':'entregado','Garantía':'entregado'
+}
+function semaforoIdx(estado) {
+  const key = ESTADO_MAP_SEMAFORO[estado] || 'ingreso'
+  return ESTADOS_SEMAFORO.findIndex(function(e){return e.key===key})
+}
+function miniSemaforoHtml(estado) {
+  const currentIdx = semaforoIdx(estado)
+  return '<div style="display:flex;align-items:center;gap:2px" title="'+estado+'">'+
+    ESTADOS_SEMAFORO.map(function(e,i){
+      const done = i < currentIdx
+      const active = i === currentIdx
+      const color = done ? '#16a34a' : active ? '#185FA5' : '#e5e5e5'
+      return '<span style="width:8px;height:8px;border-radius:50%;background:'+color+';flex-shrink:0"></span>'+
+        (i<ESTADOS_SEMAFORO.length-1?'<span style="width:6px;height:2px;background:'+(done?'#16a34a':'#e5e5e5')+'"></span>':'')
+    }).join('')+
+  '</div>'
+}
 function val(id) { return (document.getElementById(id)||{}).value||'' }
 function setVal(id,v) { const el=document.getElementById(id); if(el&&v!==undefined) el.value=v }
 function showAlert(id,msg,type,ms) {
@@ -564,14 +596,10 @@ function renderApp() {
         ((isAdmin()||isOperador()) ?
         '<div class="card">'+
           '<div class="card-title"><i class="ti ti-user-check"></i> Asignar técnico</div>'+
-          '<div class="grid2">'+
-            '<div class="field"><label>Técnico responsable</label>'+
-              '<select id="f-tecnico"><option value="">Sin asignar</option></select>'+
-            '</div>'+
-            '<div class="field"><label>Estado inicial</label>'+
-              '<select id="f-estado"><option>Ingreso de equipo</option><option>En revisión</option><option>Esperando repuesto</option><option>En reparación</option><option>Listo para entrega</option><option>Entregado</option><option>Garantía</option></select>'+
-            '</div>'+
+          '<div class="field" style="margin:0"><label>Técnico responsable</label>'+
+            '<select id="f-tecnico"><option value="">Sin asignar</option></select>'+
           '</div>'+
+          '<input type="hidden" id="f-estado" value="En revisión">'+
         '</div>'
         : '<input type="hidden" id="f-tecnico"><input type="hidden" id="f-estado" value="En revisión">') +
 
@@ -788,11 +816,19 @@ function renderApp() {
           '<div class="stat-card"><div class="num" id="d-total">0</div><div class="lbl">Total OT</div></div>'+
           '<div class="stat-card"><div class="num" id="d-abiertas">0</div><div class="lbl">En proceso</div></div>'+
           '<div class="stat-card"><div class="num" id="d-listas">0</div><div class="lbl">Listas para entrega</div></div>'+
-          '<div class="stat-card"><div class="num" id="d-stock">0</div><div class="lbl">Bajo stock mínimo</div></div>'+
+          '<div class="stat-card"><div class="num" id="d-entregadas">0</div><div class="lbl">Entregadas</div></div>'+
         '</div>'+
-        '<div class="grid2">'+
+        '<div class="grid2" style="margin-bottom:16px">'+
           '<div class="card"><div class="card-title"><i class="ti ti-chart-pie"></i> OT por estado</div><div id="d-estados"></div></div>'+
           '<div class="card"><div class="card-title"><i class="ti ti-clock"></i> Últimas órdenes</div><div id="d-recientes"></div></div>'+
+        '</div>'+
+        '<div class="grid2" style="margin-bottom:16px">'+
+          '<div class="card"><div class="card-title"><i class="ti ti-clipboard-list"></i> OT por tipo de servicio</div><div id="d-servicios"></div></div>'+
+          '<div class="card"><div class="card-title"><i class="ti ti-users"></i> Carga por técnico</div><div id="d-tecnicos"></div></div>'+
+        '</div>'+
+        '<div class="grid2">'+
+          '<div class="card"><div class="card-title"><i class="ti ti-radio"></i> OT por tipo de equipo</div><div id="d-tipos"></div></div>'+
+          '<div class="card"><div class="card-title"><i class="ti ti-alert-triangle"></i> Sin técnico asignado</div><div id="d-sinasignar"></div></div>'+
         '</div>'+
       '</div>'+
     '</div>' : '')+
@@ -992,24 +1028,8 @@ function openInforme(id) {
   document.getElementById('inf-subtitulo').textContent = o.marca+' '+o.modelo+' · '+o.cliente
 
   // Semáforo de estados
-  const allEstados = [
-    {key:'ingreso', label:'Ingreso equipo', icon:'ti-door-enter'},
-    {key:'recepcionado', label:'Recepcionado', icon:'ti-clipboard-check'},
-    {key:'revision', label:'En revisión', icon:'ti-search'},
-    {key:'espera', label:'Esp. repuesto', icon:'ti-clock'},
-    {key:'reparacion', label:'En reparación', icon:'ti-tool'},
-    {key:'listo', label:'Listo', icon:'ti-circle-check'},
-    {key:'entregado', label:'Entregado', icon:'ti-truck'}
-  ]
-  const estadoMap = {
-    'Ingreso de equipo':'ingreso',
-    'Recepcionado en laboratorio':'recepcionado',
-    'En revisión':'revision','Esperando repuesto':'espera',
-    'En reparación':'reparacion','Listo para entrega':'listo',
-    'Entregado':'entregado','Garantía':'entregado'
-  }
-  const currentKey = estadoMap[o.estado] || 'ingresado'
-  const currentIdx = allEstados.findIndex(function(e){return e.key===currentKey})
+  const allEstados = ESTADOS_SEMAFORO
+  const currentIdx = semaforoIdx(o.estado)
   const semEl = document.getElementById('inf-semaforo')
   if(semEl) {
     semEl.innerHTML = allEstados.map(function(e, i){
@@ -1191,9 +1211,11 @@ function renderOTList() {
       ((isAdmin()||isOperador())?'<td>'+(o.tecnico||'<span style="color:#aaa;font-size:12px">Sin asignar</span>')+'</td>':'')+
       '<td>'+o.fecha+'</td>'+
       '<td>'+badgeHtml(o.estado)+'</td>'+
+      '<td>'+miniSemaforoHtml(o.estado)+'</td>'+
       '<td><div class="inline">'+
         (isAdmin()?('<button class="btn sm" onclick="openOT(\'' + o.id + '\')" ><i class="ti ti-edit"></i></button>'):'')+
         ('<button class="btn sm primary" onclick="openInforme(\'' + o.id + '\')" ><i class="ti ti-report"></i> '+(isAdmin()?'Informe':isOperador()?'Ver':'Ver/Completar')+'</button>')+
+        (isAdmin()&&o.estado!=='Entregado'&&o.estado!=='Garantía'?('<button class="btn sm success" onclick="finalizarOT(\'' + o.id + '\')" title="Dar de alta / finalizar OT"><i class="ti ti-check"></i> Finalizar</button>'):'')+
         (isAdmin()?('<button class="btn sm danger" onclick="deleteOT(\'' + o.id + '\')" title="Eliminar orden"><i class="ti ti-trash"></i></button>'):'')+
       '</div></td>'+
     '</tr>'
@@ -1201,8 +1223,19 @@ function renderOTList() {
   el.innerHTML='<table><thead><tr>'+
     '<th>N° Orden</th><th>Cliente</th><th>Equipo</th><th>Serie</th>'+
     ((isAdmin()||isOperador())?'<th>Técnico</th>':'')+
-    '<th>Fecha</th><th>Estado</th><th></th>'+
+    '<th>Fecha</th><th>Estado</th><th>Progreso</th><th></th>'+
   '</tr></thead><tbody>'+rows+'</tbody></table>'
+}
+async function finalizarOT(id) {
+  const o = OTs.find(function(x){return x.id===id}); if(!o) return
+  if(!confirm('¿Marcar la orden '+o.orden+' como entregada y cerrar el proceso?')) return
+  const prevEstado = o.estado
+  o.estado = 'Entregado'
+  const saved = await saveOT(o)
+  if(!saved) { alert('No se pudo actualizar la orden. Intenta de nuevo.'); o.estado = prevEstado; return }
+  const idx = OTs.findIndex(function(x){return x.id===id}); if(idx>=0) OTs[idx]=o
+  renderOTList(); updateBadgeSol()
+  if(currentViewName==='dashboard') renderDashboard()
 }
 function filtrarOT(){renderOTList()}
 
@@ -1504,19 +1537,42 @@ async function saveUsuario(id) {
 async function deleteUsuario(id){if(confirm('Eliminar este usuario?')){Usuarios=Usuarios.filter(function(u){return u.id!==id});await SB.delete('usuarios',id);renderUsuarios()}}
 
 // ─── DASHBOARD ───────────────────────────────────────────────
+function barListHtml(counts, total) {
+  const entries = Object.entries(counts).sort(function(a,b){return b[1]-a[1]})
+  return entries.map(function(e){return '<div class="bar-wrap"><div style="width:160px;font-size:12px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+e[0]+'</div><div class="bar-bg"><div class="bar-fill" style="width:'+(total?Math.round(e[1]/total*100):0)+'%"></div></div><div style="font-size:13px;font-weight:600;width:24px;text-align:right">'+e[1]+'</div></div>'}).join('')||'<p style="color:#aaa;font-size:13px">Sin datos.</p>'
+}
 function renderDashboard() {
   const total=OTs.length
   const abiertas=OTs.filter(function(o){return ['En revisión','En reparación','Esperando repuesto'].includes(o.estado)}).length
   const listas=OTs.filter(function(o){return o.estado==='Listo para entrega'}).length
-  const bajoStock=Inventario.filter(function(i){return i.cantidad<=i.stockMin}).length
+  const entregadas=OTs.filter(function(o){return o.estado==='Entregado'||o.estado==='Garantía'}).length
   const ge=function(id){return document.getElementById(id)}
   if(ge('d-total'))ge('d-total').textContent=total
   if(ge('d-abiertas'))ge('d-abiertas').textContent=abiertas
   if(ge('d-listas'))ge('d-listas').textContent=listas
-  if(ge('d-stock'))ge('d-stock').textContent=bajoStock
+  if(ge('d-entregadas'))ge('d-entregadas').textContent=entregadas
+
   const estados={}; OTs.forEach(function(o){estados[o.estado]=(estados[o.estado]||0)+1})
-  if(ge('d-estados'))ge('d-estados').innerHTML=Object.entries(estados).map(function(e){return '<div class="bar-wrap"><div style="width:160px;font-size:12px;color:#555">'+e[0]+'</div><div class="bar-bg"><div class="bar-fill" style="width:'+(total?Math.round(e[1]/total*100):0)+'%"></div></div><div style="font-size:13px;font-weight:600;width:24px;text-align:right">'+e[1]+'</div></div>'}).join('')||'<p style="color:#aaa;font-size:13px">Sin datos.</p>'
+  if(ge('d-estados'))ge('d-estados').innerHTML=barListHtml(estados, total)
+
   if(ge('d-recientes'))ge('d-recientes').innerHTML=OTs.slice(0,6).map(function(o){return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f5f5f4"><div><div style="font-size:13px;font-weight:600">'+o.orden+'</div><div style="font-size:11px;color:#888">'+o.cliente+' · '+o.marca+' '+o.modelo+'</div></div>'+badgeHtml(o.estado)+'</div>'}).join('')||'<p style="color:#aaa;font-size:13px">Sin órdenes.</p>'
+
+  const servicios={}; OTs.forEach(function(o){const s=o.servicio||'Sin especificar'; servicios[s]=(servicios[s]||0)+1})
+  if(ge('d-servicios'))ge('d-servicios').innerHTML=barListHtml(servicios, total)
+
+  const tecnicos={}; OTs.forEach(function(o){const t=o.tecnico||'Sin asignar'; tecnicos[t]=(tecnicos[t]||0)+1})
+  if(ge('d-tecnicos'))ge('d-tecnicos').innerHTML=barListHtml(tecnicos, total)
+
+  const tipoLabel = {'radio':'Radio','duplexor':'Duplexor','otro':'Otro'}
+  const tipos={}; OTs.forEach(function(o){const t=tipoLabel[o.tipo]||o.tipo||'Sin especificar'; tipos[t]=(tipos[t]||0)+1})
+  if(ge('d-tipos'))ge('d-tipos').innerHTML=barListHtml(tipos, total)
+
+  const sinAsignar = OTs.filter(function(o){return !o.tecnico && o.estado!=='Entregado' && o.estado!=='Garantía'})
+  if(ge('d-sinasignar')) {
+    ge('d-sinasignar').innerHTML = sinAsignar.length ? sinAsignar.slice(0,8).map(function(o){
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f5f5f4"><div><div style="font-size:13px;font-weight:600">'+o.orden+'</div><div style="font-size:11px;color:#888">'+o.cliente+' · '+o.marca+' '+o.modelo+'</div></div>'+badgeHtml(o.estado)+'</div>'
+    }).join('') : '<p style="color:#aaa;font-size:13px">Todas las OT en proceso tienen técnico asignado.</p>'
+  }
 }
 
 // ─── MODAL ───────────────────────────────────────────────────
@@ -1733,6 +1789,7 @@ window.guardarOT=guardarOT; window.resetForm=resetForm; window.handlePhotos=hand
 window.removePhoto=removePhoto; window.checkHistorial=checkHistorial
 window.handleRepairPhotos=handleRepairPhotos; window.removeRepairPhoto=removeRepairPhoto
 window.filtrarOT=filtrarOT; window.openOT=openOT; window.openInforme=openInforme; window.deleteOT=deleteOT
+window.finalizarOT=finalizarOT
 window.guardarInforme=guardarInforme; window.imprimirOT=imprimirOT; window.imprimirInforme=imprimirInforme
 window.showBuscarCliente=showBuscarCliente; window.filtrarModalClientes=filtrarModalClientes
 window.seleccionarClienteForm=seleccionarClienteForm; window.showFormCliente=showFormCliente
