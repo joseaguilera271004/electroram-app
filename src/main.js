@@ -307,7 +307,6 @@ function doLogout() {
   if(notifInterval) { clearInterval(notifInterval); notifInterval=null }
   renderLogin()
 setTimeout(function(){
-  if(window.) ()
   // Attach mobile menu button listener
   var btn = document.getElementById('mob-menu-btn')
   if(btn) btn.addEventListener('click', function(){ openMobMenu() })
@@ -358,29 +357,6 @@ function closeMobMenu() {
   if(overlay) overlay.style.display='none'
 }
 
-function () {
-  const isMobile = window.innerWidth <= 768
-  const mobTop = document.getElementById('')
-  const mainApp = document.getElementById('main-app')
-  if(mobTop) mobTop.style.display = isMobile ? 'flex' : 'none'
-  if(mainApp) mainApp.style.paddingTop = isMobile ? '52px' : '0'
-  // On desktop, ensure sidebar is visible
-  if(!isMobile) {
-    const sidebar = document.querySelector('.sidebar')
-    if(sidebar) {
-      sidebar.style.display='flex'
-      sidebar.style.position=''
-    }
-  } else {
-    // On mobile, hide sidebar by default
-    const sidebar = document.querySelector('.sidebar')
-    if(sidebar && !sidebar.style.boxShadow) {
-      
-    }
-  }
-}
-
-window.addEventListener('resize', )
 window.openMobMenu = openMobMenu
 window.closeMobMenu = closeMobMenu
 
@@ -807,7 +783,6 @@ function showView(v) {
       btn._hasListener = true
       btn.addEventListener('click', function(){ openMobMenu() })
     }
-    if(window.) ()
   }, 100)
   document.querySelectorAll('.view').forEach(function(el){el.classList.add('hidden')})
   document.querySelectorAll('.nav-item').forEach(function(el){el.classList.remove('active')})
