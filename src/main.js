@@ -943,6 +943,12 @@ async function guardarOT() {
   const reqs = [['f-orden','N° Orden'],['f-cliente','Cliente'],['f-marca','Marca'],['f-modelo','Modelo'],['f-servicio','Tipo de servicio']]
   for(let i=0;i<reqs.length;i++) { if(!val(reqs[i][0])) { showAlert('save-alert','Por favor completa el campo: '+reqs[i][1],'warning',4000); return } }
   const editId = document.getElementById('_editing_id')?.value
+  const ordenIngresada = val('f-orden').trim()
+  const ordenDuplicada = OTs.find(function(x){ return x.orden.trim().toLowerCase()===ordenIngresada.toLowerCase() && x.id!==editId })
+  if(ordenDuplicada) {
+    showAlert('save-alert','Ya existe una orden con el número "'+ordenIngresada+'" (cliente: '+ordenDuplicada.cliente+'). Usa un número distinto antes de guardar.','warning',7000)
+    return
+  }
   const tecnicoAsignado = val('f-tecnico')
   console.log('Guardando OT con tecnico:', tecnicoAsignado)
   const prevData = editId ? OTs.find(function(x){return x.id===editId}) : null
