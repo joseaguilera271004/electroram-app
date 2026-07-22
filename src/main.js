@@ -1613,14 +1613,55 @@ function imprimirOT() {
   win.document.close()
 }
 
+function printAccsHtml(accs) {
+  accs = accs || {}
+  const items = [
+    {k:'micro',l:'Microfono'},{k:'bateria',l:'Bateria'},{k:'antena',l:'Antena'},
+    {k:'carcasa',l:'Carcasa'},{k:'perillas',l:'Perillas'},{k:'pernos',l:'Otro'},
+    {k:'mariposas',l:'Mariposas'},{k:'pinza',l:'Pinza'},{k:'cargador',l:'Cargador'}
+  ]
+  return '<div class="ag">'+items.map(function(a){return '<div class="ai"><b>'+a.l+':</b> '+(accs[a.k]||'No aplica')+'</div>'}).join('')+'</div>'
+}
+function printPhotosHtml(fotos) {
+  if(!fotos||!fotos.length) return '<p style="color:#999;font-size:11px">Sin fotos.</p>'
+  return '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">'+fotos.map(function(src){return '<img src="'+src+'" style="width:100%;height:90px;object-fit:cover;border:1px solid #ddd;border-radius:4px">'}).join('')+'</div>'
+}
+function printParamsHtml(o) {
+  const p = o.params||{}
+  if(o.tipo === 'duplexor') {
+    return '<table class="pt"><thead><tr><th>Parametro</th><th>Inicial</th><th>Final</th></tr></thead><tbody>'+
+      '<tr><td>Banda</td><td colspan="2">'+(p.banda||o.banda||'-')+'</td></tr>'+
+      '<tr><td>Frecuencia RX (MHz)</td><td colspan="2">'+(p.frecuencias||o.frecuencias||'-')+'</td></tr>'+
+      '<tr><td>Separacion TX/RX (MHz)</td><td colspan="2">'+(p.sep||'-')+'</td></tr>'+
+      '<tr><td>Frec. Error (Hz)</td><td>'+(p.fe_i||'')+'</td><td>'+(p.fe_f||'')+'</td></tr>'+
+      '<tr><td>Desviacion (kHz)</td><td>'+(p.dev_i||'')+'</td><td>'+(p.dev_f||'')+'</td></tr>'+
+      '<tr><td>Potencia TX (W)</td><td>'+(p.pot_i||'')+'</td><td>'+(p.pot_f||'')+'</td></tr>'+
+      '<tr><td>Sensibilidad (uV)</td><td>'+(p.sens_i||'')+'</td><td>'+(p.sens_f||'')+'</td></tr>'+
+      '<tr><td>Bateria (%)</td><td>'+(p.bat_i||'')+'</td><td>'+(p.bat_f||'')+'</td></tr>'+
+      '</tbody></table>'
+  }
+  return '<table class="pt"><thead><tr><th>Parametro</th><th>Valor</th></tr></thead><tbody>'+
+    '<tr><td>Potencia directa (W)</td><td>'+(p.pot_dir||'-')+'</td></tr>'+
+    '<tr><td>Potencia reflejada (W)</td><td>'+(p.pot_ref||'-')+'</td></tr>'+
+    '<tr><td>ROE</td><td>'+(p.roe||'-')+'</td></tr>'+
+    '<tr><td>Licencias cargadas</td><td>'+(p.licencias||'-')+'</td></tr>'+
+    '<tr><td>Version de firmware</td><td>'+(p.version_sw||'-')+'</td></tr>'+
+    '</tbody></table>'
+}
 function imprimirInforme() {
   const id=val('inf-ot-id'); const o=id?OTs.find(function(x){return x.id===id}):null; if(!o) return
   const win=window.open('','_blank')
   const repuestos=o.repuestos||[]
-  win.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Informe '+o.orden+'</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:12px;padding:20px}.header{display:flex;justify-content:space-between;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:10px}h1{font-size:18px;font-weight:bold;color:#185FA5}.section{margin-bottom:10px;border:1px solid #ddd;border-radius:6px;overflow:hidden}.st{background:#185FA5;color:#fff;padding:5px 10px;font-size:11px;font-weight:bold;text-transform:uppercase}.sb{padding:8px 10px}.pt,.rt{width:100%;border-collapse:collapse;font-size:11px}.pt th,.rt th{background:#f5f5f5;padding:4px 8px;text-align:left;border:1px solid #ddd}.pt td,.rt td{padding:4px 8px;border:1px solid #ddd}.firmas{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;margin-top:20px}.firma{text-align:center;border-top:1px solid #000;padding-top:6px;font-size:11px}@media print{body{padding:10px}}</style></head><body>'+
-    '<div class="header"><div><h1>RadioTech</h1><p style="font-size:11px;color:#555">Informe tecnico</p></div><div style="text-align:right"><div style="font-size:22px;font-weight:bold;color:#185FA5;font-family:monospace">'+o.orden+'</div><div style="font-size:11px">'+o.fecha+' | '+o.cliente+'</div><div style="font-size:11px">'+o.marca+' '+o.modelo+' | S/N: '+(o.serie||'-')+'</div></div></div>'+
+  const fotosReparacion=(o.params&&o.params.fotos_reparacion)||[]
+  win.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Informe '+o.orden+'</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:12px;padding:20px}.header{display:flex;justify-content:space-between;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:10px}h1{font-size:18px;font-weight:bold;color:#185FA5}.section{margin-bottom:10px;border:1px solid #ddd;border-radius:6px;overflow:hidden}.st{background:#185FA5;color:#fff;padding:5px 10px;font-size:11px;font-weight:bold;text-transform:uppercase}.sb{padding:8px 10px}.pt,.rt{width:100%;border-collapse:collapse;font-size:11px}.pt th,.rt th{background:#f5f5f5;padding:4px 8px;text-align:left;border:1px solid #ddd}.pt td,.rt td{padding:4px 8px;border:1px solid #ddd}.g2{display:grid;grid-template-columns:1fr 1fr;gap:6px}.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}.f{margin-bottom:4px}.f label{font-size:10px;color:#777;display:block}.f span{font-size:12px;font-weight:500;border-bottom:1px solid #eee;display:block;min-height:16px}.ag{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}.ai{font-size:11px;padding:3px 6px;background:#f5f5f5;border-radius:4px}.firmas{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;margin-top:20px}.firma{text-align:center;border-top:1px solid #000;padding-top:6px;font-size:11px}@media print{body{padding:10px}.section{page-break-inside:avoid}}</style></head><body>'+
+    '<div class="header"><div><h1>RadioTech</h1><p style="font-size:11px;color:#555">Informe tecnico</p></div><div style="text-align:right"><div style="font-size:22px;font-weight:bold;color:#185FA5;font-family:monospace">'+o.orden+'</div><div style="font-size:11px">'+o.fecha+' | '+o.cliente+'</div><div style="font-size:11px">'+o.marca+' '+o.modelo+' | S/N: '+(o.serie||'-')+'</div><div style="font-size:11px;margin-top:2px">Estado: <b>'+(o.estado||'-')+'</b></div></div></div>'+
+    '<div class="section"><div class="st">Informacion de recepcion</div><div class="sb g2"><div><div class="f"><label>Cliente</label><span>'+(o.cliente||'')+'</span></div><div class="f"><label>Contacto</label><span>'+(o.solicitado||'')+'</span></div><div class="f"><label>Telefono</label><span>'+(o.fono||'')+'</span></div><div class="f"><label>Direccion</label><span>'+(o.direccion||'')+', '+(o.ciudad||'')+'</span></div></div><div><div class="f"><label>Tipo de equipo</label><span>'+(o.tipo||'')+'</span></div><div class="f"><label>Marca / Modelo</label><span>'+(o.marca||'')+' '+(o.modelo||'')+'</span></div><div class="f"><label>N de serie</label><span>'+(o.serie||'')+'</span></div><div class="f"><label>Fecha de recepcion</label><span>'+(o.fecha||'')+'</span></div></div></div>'+
+    '<div class="sb" style="padding-top:0"><div style="font-size:10px;color:#777;font-weight:bold;margin-bottom:4px">ACCESORIOS RECIBIDOS</div>'+printAccsHtml(o.accs)+'</div></div>'+
+    '<div class="section"><div class="st">Observaciones del cliente</div><div class="sb" style="min-height:40px">'+(o.observaciones||'Sin observaciones.')+'</div></div>'+
+    '<div class="section"><div class="st">Fotos de ingreso</div><div class="sb">'+printPhotosHtml(o.fotos)+'</div></div>'+
+    '<div class="section"><div class="st">Parametros tecnicos</div><div class="sb">'+printParamsHtml(o)+'</div></div>'+
     '<div class="section"><div class="st">Diagnostico e informe tecnico</div><div class="sb" style="min-height:80px">'+(o.informe||'')+'</div></div>'+
-    '<div class="section"><div class="st">Parametros de medicion</div><div class="sb"><table class="pt"><thead><tr><th>Parametro</th><th>Inicial</th><th>Final</th></tr></thead><tbody><tr><td>Frec. Error (Hz)</td><td>'+(o.params?.fe_i||'')+'</td><td>'+(o.params?.fe_f||'')+'</td></tr><tr><td>Desviacion (kHz)</td><td>'+(o.params?.dev_i||'')+'</td><td>'+(o.params?.dev_f||'')+'</td></tr><tr><td>Potencia (W)</td><td>'+(o.params?.pot_i||'')+'</td><td>'+(o.params?.pot_f||'')+'</td></tr><tr><td>Sensibilidad (uV)</td><td>'+(o.params?.sens_i||'')+'</td><td>'+(o.params?.sens_f||'')+'</td></tr><tr><td>Bateria (%)</td><td>'+(o.params?.bat_i||'')+'</td><td>'+(o.params?.bat_f||'')+'</td></tr></tbody></table></div></div>'+
+    '<div class="section"><div class="st">Fotos de reparacion</div><div class="sb">'+printPhotosHtml(fotosReparacion)+'</div></div>'+
     (repuestos.length?'<div class="section"><div class="st">Repuestos utilizados</div><div class="sb"><table class="rt"><thead><tr><th>Cant.</th><th>Codigo</th><th>Descripcion</th></tr></thead><tbody>'+repuestos.map(function(r){return '<tr><td>'+r.qty+'</td><td>'+r.codigo+'</td><td>'+r.desc+'</td></tr>'}).join('')+'</tbody></table></div></div>':'')+
     '<div class="firmas"><div class="firma">Tecnico<br><b>'+(o.tecnico||'')+'</b></div><div class="firma">Jefe de area<br><b>&nbsp;</b></div><div class="firma">Solicitante<br><b>'+(o.solicitado||'')+'</b></div></div>'+
     '<scr'+'ipt>window.onload=function(){window.print()}<'+'/script></body></html>')
