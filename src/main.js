@@ -442,7 +442,7 @@ function renderApp() {
       '<div id="notif-panel" class="hidden" style="position:absolute;left:8px;right:8px;top:120px;background:#fff;border:1px solid #e5e5e5;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.12);z-index:200;max-height:400px;overflow-y:auto"></div>'+
       '<span class="nav-section">Órdenes</span>'+
       ((isAdmin()||isOperador()) ? '<div class="nav-item" id="nav-nueva" onclick="showView(\'nueva\')" ><i class="ti ti-plus"></i> Nueva OT</div>' : '')+
-      (isAdmin() ? '<div class="nav-item" id="nav-antigua" onclick="nuevaOrdenAntigua()"><i class="ti ti-history"></i> Ingresar orden antigua</div>' : '')+
+      ((isAdmin()||isOperador()) ? '<div class="nav-item" id="nav-antigua" onclick="nuevaOrdenAntigua()"><i class="ti ti-history"></i> Ingresar orden antigua</div>' : '')+
       ((isAdmin()||isOperador()) ? '<div class="nav-item" id="nav-lista" onclick="showView(\'lista\')"><i class="ti ti-list"></i> Todas las OT</div>' : '<div class="nav-item active" id="nav-lista" onclick="showView(\'lista\')"><i class="ti ti-list"></i> Mis OT asignadas</div>')+
       '<span class="nav-section">Datos</span>'+
       '<div class="nav-item" id="nav-clientes" onclick="showView(\'clientes\')"><i class="ti ti-building"></i> Clientes</div>'+
@@ -945,10 +945,14 @@ async function guardarOT() {
   const editId = document.getElementById('_editing_id')?.value
   const tecnicoAsignado = val('f-tecnico')
   console.log('Guardando OT con tecnico:', tecnicoAsignado)
+  const prevData = editId ? OTs.find(function(x){return x.id===editId}) : null
+  const tecnicoRecienAsignado = tecnicoAsignado && (!prevData || !prevData.tecnico)
+  const estadoCalculado = tecnicoRecienAsignado ? 'Recepcionado en laboratorio' :
+    (prevData ? prevData.estado : (tecnicoAsignado ? 'Recepcionado en laboratorio' : 'Ingreso de equipo'))
   const data = {
     id: editId||genUUID(),
     orden:val('f-orden'), fecha:val('f-fecha'), servicio:val('f-servicio'),
-    estado:val('f-estado')||'En revisión', tecnico:tecnicoAsignado, garantia:val('f-garantia'),
+    estado:estadoCalculado, tecnico:tecnicoAsignado, garantia:val('f-garantia'),
     cliente:val('f-cliente'), rut:val('f-rut'), solicitado:val('f-solicitado'),
     fono:val('f-fono'), direccion:val('f-direccion'), ciudad:val('f-ciudad'),
     tipo:val('f-tipo'), marca:val('f-marca'), modelo:val('f-modelo'), serie:val('f-serie'),
@@ -958,7 +962,6 @@ async function guardarOT() {
     informe:'', repuestos:[], mdo:'',
     banda:'', frecuencias:'', canales:'', params:{}
   }
-  const prevData = editId ? OTs.find(function(x){return x.id===editId}) : null
   if(prevData) {
     data.informe=prevData.informe||''; data.repuestos=prevData.repuestos||[]
     data.mdo=prevData.mdo||''; data.banda=prevData.banda||''
