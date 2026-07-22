@@ -52,6 +52,7 @@ let Notificaciones = []
 let Usuarios = []
 let currentUser = null
 let photoDataURLs = []
+let repairPhotoDataURLs = []
 let notifInterval = null
 let currentViewName = null
 
@@ -105,7 +106,7 @@ function genOrden() {
   const mm = String(d.getMonth()+1).padStart(2,'0')
   const yy = String(d.getFullYear()).slice(2)
   const seq = String(OTs.length+1).padStart(2,'0')
-  return dd+'/'+mm+'/'+yy+'-'+seq
+  return dd+mm+yy+'-'+seq
 }
 function badgeHtml(estado) {
   const map = {'En revisión':'open','En reparación':'repair','Esperando repuesto':'waiting','Listo para entrega':'done','Entregado':'done','Garantía':'warranty','Presupuesto':'budget'}
@@ -305,7 +306,7 @@ async function doLogin() {
 }
 
 function doLogout() {
-  currentUser=null; photoDataURLs=[]
+  currentUser=null; photoDataURLs=[]; repairPhotoDataURLs=[]
   if(notifInterval) { clearInterval(notifInterval); notifInterval=null }
   renderLogin()
 setTimeout(function(){
@@ -627,6 +628,15 @@ function renderApp() {
           '<div class="field" style="margin:0"><textarea id="inf-informe" style="min-height:100px" placeholder="Describe el diagnóstico, trabajo realizado, recomendaciones..."></textarea></div>'+
         '</div>'+
         '<div class="card">'+
+          '<div class="card-title"><i class="ti ti-camera"></i> Fotos de reparación</div>'+
+          '<input type="file" id="foto-input-reparacion" accept="image/*" multiple style="display:none" onchange="handleRepairPhotos(this)">'+
+          '<div class="photo-zone" onclick="document.getElementById(\'foto-input-reparacion\').click()">'+
+            '<i class="ti ti-camera-plus" style="font-size:32px;margin-bottom:8px;display:block"></i>'+
+            'Haz clic para agregar fotos de la reparación<br><span style="font-size:11px">Trabajo realizado, piezas cambiadas, estado final</span>'+
+          '</div>'+
+          '<div class="photo-grid" id="photo-grid-reparacion"></div>'+
+        '</div>'+
+        '<div class="card">'+
           '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">'+
             '<div class="card-title" style="margin:0;border:none;padding:0"><i class="ti ti-tools"></i> Repuestos utilizados</div>'+
             '<div class="inline">'+
@@ -830,7 +840,7 @@ function initForm() {
 function nuevaOrdenAntigua() {
   showView('nueva')
   const el = document.getElementById('f-orden')
-  if(el) { el.removeAttribute('readonly'); el.value=''; el.placeholder='ej: 21/07/26-01' }
+  if(el) { el.removeAttribute('readonly'); el.value=''; el.placeholder='ej: 210726-01' }
   showAlert('save-alert','Modo orden antigua: ingresa manualmente el N° de orden y la fecha de recepción.','warning',6000)
 }
 
@@ -948,6 +958,15 @@ function renderPhotoGrid() {
 }
 function removePhoto(i){photoDataURLs.splice(i,1);renderPhotoGrid()}
 
+function handleRepairPhotos(input) {
+  Array.from(input.files).forEach(function(file){ const r=new FileReader(); r.onload=function(e){repairPhotoDataURLs.push(e.target.result);renderRepairPhotoGrid()}; r.readAsDataURL(file) })
+}
+function renderRepairPhotoGrid() {
+  const grid=document.getElementById('photo-grid-reparacion'); if(!grid) return
+  grid.innerHTML=repairPhotoDataURLs.map(function(src,i){return '<div class="photo-thumb"><img src="'+src+'" alt="Foto '+(i+1)+'"><button class="photo-del" onclick="removeRepairPhoto('+i+')">×</button></div>'}).join('')
+}
+function removeRepairPhoto(i){repairPhotoDataURLs.splice(i,1);renderRepairPhotoGrid()}
+
 // ─── INFORME TÉCNICO ─────────────────────────────────────────
 function openInforme(id) {
   const o = OTs.find(function(x){return x.id===id}); if(!o) return
@@ -1053,6 +1072,8 @@ function openInforme(id) {
   setVal('inf-informe', o.informe||'')
   setVal('inf-estado', o.estado||'Recepcionado en laboratorio')
   setVal('f-mdo', o.mdo||'')
+  repairPhotoDataURLs = (o.params&&o.params.fotos_reparacion) || []
+  renderRepairPhotoGrid()
   // Render dynamic params based on equipment type
   setTimeout(function(){
     renderParamsForTipo(o.tipo, Object.assign({}, o.params||{}, {
@@ -1097,7 +1118,8 @@ async function guardarInforme() {
     sens_i:val('p-sens-i'),sens_f:val('p-sens-f'),
     bat_i:val('p-bat-i'),bat_f:val('p-bat-f'),
     pot_dir:val('p-pot-dir'),pot_ref:val('p-pot-ref'),roe:val('p-roe'),
-    licencias:val('p-licencias'),version_sw:val('p-version-sw')
+    licencias:val('p-licencias'),version_sw:val('p-version-sw'),
+    fotos_reparacion:repairPhotoDataURLs
   }
   await saveOT(o)
   const otIdx = OTs.findIndex(function(x){return x.id===o.id})
@@ -1157,6 +1179,7 @@ function renderOTList() {
       '<td><div class="inline">'+
         (isAdmin()?('<button class="btn sm" onclick="openOT(\'' + o.id + '\')" ><i class="ti ti-edit"></i></button>'):'')+
         ('<button class="btn sm primary" onclick="openInforme(\'' + o.id + '\')" ><i class="ti ti-report"></i> '+(isAdmin()?'Informe':isOperador()?'Ver':'Ver/Completar')+'</button>')+
+        (isAdmin()?('<button class="btn sm danger" onclick="deleteOT(\'' + o.id + '\')" title="Eliminar orden"><i class="ti ti-trash"></i></button>'):'')+
       '</div></td>'+
     '</tr>'
   }
@@ -1196,6 +1219,14 @@ function openOT(id) {
     if(!hi){hi=document.createElement('input');hi.type='hidden';hi.id='_editing_id';document.body.appendChild(hi)}
     hi.value=id
   },100)
+}
+
+async function deleteOT(id) {
+  const o = OTs.find(function(x){return x.id===id}); if(!o) return
+  if(!confirm('¿Seguro que quieres eliminar la orden '+o.orden+' de '+o.cliente+'? Esta acción no se puede deshacer.')) return
+  await SB.delete('ots', id)
+  OTs = OTs.filter(function(x){return x.id!==id})
+  renderOTList(); updateBadgeSol()
 }
 
 // ─── CLIENTES ────────────────────────────────────────────────
@@ -1544,29 +1575,18 @@ function renderParamsForTipo(tipo, params) {
   if(tipo === 'radio' || tipo === '' || !tipo) {
     container.innerHTML =
       '<div class="grid3" style="margin-bottom:12px">'+
-        '<div class="field"><label>Banda</label><select id="inf-banda"><option>UHF</option><option>VHF</option><option>800 MHz</option><option>900 MHz</option></select></div>'+
-        '<div class="field"><label>Frecuencia TX (MHz)</label><input id="inf-frecuencias" placeholder="ej: 450.000" value="'+(params.frecuencias||'')+'"></div>'+
-        '<div class="field"><label>Canales programados</label><input type="number" id="inf-canales" placeholder="16" value="'+(params.canales||'')+'"></div>'+
-      '</div>'+
-      '<div class="param-grid">'+
-        '<span></span><span class="param-head">Inicial</span><span class="param-head">Final</span>'+
-        '<span class="param-label">Frec. Error (Hz)</span><input class="param-input" id="p-fe-i" type="number" placeholder="0" value="'+(params.fe_i||'')+'"><input class="param-input" id="p-fe-f" type="number" placeholder="0" value="'+(params.fe_f||'')+'">'+
-        '<span class="param-label">Desviación (kHz)</span><input class="param-input" id="p-dev-i" type="number" placeholder="0" value="'+(params.dev_i||'')+'"><input class="param-input" id="p-dev-f" type="number" placeholder="0" value="'+(params.dev_f||'')+'">'+
-        '<span class="param-label">Potencia TX (W)</span><input class="param-input" id="p-pot-i" type="number" placeholder="0" value="'+(params.pot_i||'')+'"><input class="param-input" id="p-pot-f" type="number" placeholder="0" value="'+(params.pot_f||'')+'">'+
-        '<span class="param-label">Sensibilidad (uV)</span><input class="param-input" id="p-sens-i" type="number" placeholder="0" value="'+(params.sens_i||'')+'"><input class="param-input" id="p-sens-f" type="number" placeholder="0" value="'+(params.sens_f||'')+'">'+
-        '<span class="param-label">Batería (%)</span><input class="param-input" id="p-bat-i" type="number" placeholder="0" value="'+(params.bat_i||'')+'"><input class="param-input" id="p-bat-f" type="number" placeholder="0" value="'+(params.bat_f||'')+'">'+
-      '</div>'+
-      '<div class="section-label"><i class="ti ti-antenna"></i> Parámetros técnicos</div>'+
-      '<div class="grid3" style="margin-bottom:12px">'+
         '<div class="field"><label>Potencia directa (W)</label><input class="param-input" id="p-pot-dir" type="number" placeholder="0" value="'+(params.pot_dir||'')+'"></div>'+
         '<div class="field"><label>Potencia reflejada (W)</label><input class="param-input" id="p-pot-ref" type="number" placeholder="0" value="'+(params.pot_ref||'')+'"></div>'+
         '<div class="field"><label>ROE</label><input class="param-input" id="p-roe" type="number" step="0.1" placeholder="1.0" value="'+(params.roe||'')+'"></div>'+
       '</div>'+
       '<div class="grid2">'+
         '<div class="field"><label>Licencias cargadas</label><input id="p-licencias" placeholder="ej: 16 canales" value="'+(params.licencias||'')+'"></div>'+
-        '<div class="field"><label>Versión de software</label><input id="p-version-sw" placeholder="ej: R01.08.00" value="'+(params.version_sw||'')+'"></div>'+
-      '</div>'
-    if(params.banda) setVal('inf-banda', params.banda)
+        '<div class="field"><label>Versión de firmware</label><input id="p-version-sw" placeholder="ej: R01.08.00" value="'+(params.version_sw||'')+'"></div>'+
+      '</div>'+
+      '<input type="hidden" id="inf-banda"><input type="hidden" id="inf-frecuencias"><input type="hidden" id="inf-canales">'+
+      '<input type="hidden" id="p-fe-i"><input type="hidden" id="p-fe-f"><input type="hidden" id="p-dev-i"><input type="hidden" id="p-dev-f">'+
+      '<input type="hidden" id="p-pot-i"><input type="hidden" id="p-pot-f"><input type="hidden" id="p-sens-i"><input type="hidden" id="p-sens-f">'+
+      '<input type="hidden" id="p-bat-i"><input type="hidden" id="p-bat-f">'
   }
   else if(tipo === 'duplexor') {
     container.innerHTML =
@@ -1577,13 +1597,14 @@ function renderParamsForTipo(tipo, params) {
       '</div>'+
       '<div class="param-grid">'+
         '<span></span><span class="param-head">Inicial</span><span class="param-head">Final</span>'+
-        '<span class="param-label">Pérd. inserción TX (dB)</span><input class="param-input" id="p-fe-i" type="number" placeholder="0" value="'+(params.fe_i||'')+'"><input class="param-input" id="p-fe-f" type="number" placeholder="0" value="'+(params.fe_f||'')+'">'+
-        '<span class="param-label">Pérd. inserción RX (dB)</span><input class="param-input" id="p-dev-i" type="number" placeholder="0" value="'+(params.dev_i||'')+'"><input class="param-input" id="p-dev-f" type="number" placeholder="0" value="'+(params.dev_f||'')+'">'+
-        '<span class="param-label">Atenuación (dB)</span><input class="param-input" id="p-pot-i" type="number" placeholder="0" value="'+(params.pot_i||'')+'"><input class="param-input" id="p-pot-f" type="number" placeholder="0" value="'+(params.pot_f||'')+'">'+
-        '<span class="param-label">Potencia máx. (W)</span><input class="param-input" id="p-sens-i" type="number" placeholder="0" value="'+(params.sens_i||'')+'"><input class="param-input" id="p-sens-f" type="number" placeholder="0" value="'+(params.sens_f||'')+'">'+
-        '<span style="display:none"></span><input type="hidden" id="p-bat-i"><input type="hidden" id="p-bat-f">'+
-        '<input type="hidden" id="inf-canales">'+
-      '</div>'
+        '<span class="param-label">Frec. Error (Hz)</span><input class="param-input" id="p-fe-i" type="number" placeholder="0" value="'+(params.fe_i||'')+'"><input class="param-input" id="p-fe-f" type="number" placeholder="0" value="'+(params.fe_f||'')+'">'+
+        '<span class="param-label">Desviación (kHz)</span><input class="param-input" id="p-dev-i" type="number" placeholder="0" value="'+(params.dev_i||'')+'"><input class="param-input" id="p-dev-f" type="number" placeholder="0" value="'+(params.dev_f||'')+'">'+
+        '<span class="param-label">Potencia TX (W)</span><input class="param-input" id="p-pot-i" type="number" placeholder="0" value="'+(params.pot_i||'')+'"><input class="param-input" id="p-pot-f" type="number" placeholder="0" value="'+(params.pot_f||'')+'">'+
+        '<span class="param-label">Sensibilidad (uV)</span><input class="param-input" id="p-sens-i" type="number" placeholder="0" value="'+(params.sens_i||'')+'"><input class="param-input" id="p-sens-f" type="number" placeholder="0" value="'+(params.sens_f||'')+'">'+
+        '<span class="param-label">Batería (%)</span><input class="param-input" id="p-bat-i" type="number" placeholder="0" value="'+(params.bat_i||'')+'"><input class="param-input" id="p-bat-f" type="number" placeholder="0" value="'+(params.bat_f||'')+'">'+
+      '</div>'+
+      '<input type="hidden" id="inf-canales"><input type="hidden" id="p-pot-dir"><input type="hidden" id="p-pot-ref"><input type="hidden" id="p-roe">'+
+      '<input type="hidden" id="p-licencias"><input type="hidden" id="p-version-sw">'
     if(params.banda) setVal('inf-banda', params.banda)
   }
   else if(tipo === 'antena') {
@@ -1695,7 +1716,8 @@ function showViewMobile(v) {
 window.showView=showView; window.doLogin=doLogin; window.doLogout=doLogout; window.nuevaOrdenAntigua=nuevaOrdenAntigua
 window.guardarOT=guardarOT; window.resetForm=resetForm; window.handlePhotos=handlePhotos
 window.removePhoto=removePhoto; window.checkHistorial=checkHistorial
-window.filtrarOT=filtrarOT; window.openOT=openOT; window.openInforme=openInforme
+window.handleRepairPhotos=handleRepairPhotos; window.removeRepairPhoto=removeRepairPhoto
+window.filtrarOT=filtrarOT; window.openOT=openOT; window.openInforme=openInforme; window.deleteOT=deleteOT
 window.guardarInforme=guardarInforme; window.imprimirOT=imprimirOT; window.imprimirInforme=imprimirInforme
 window.showBuscarCliente=showBuscarCliente; window.filtrarModalClientes=filtrarModalClientes
 window.seleccionarClienteForm=seleccionarClienteForm; window.showFormCliente=showFormCliente
