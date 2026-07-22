@@ -274,10 +274,21 @@ function renderLogin() {
     '<p style="font-size:13px;color:#888;margin-top:4px">Servicio técnico</p></div>'+
     '<div id="login-alert" class="alert hidden" style="margin-bottom:12px"></div>'+
     '<div class="field"><label>Usuario</label><input id="l-usuario" placeholder="Ingresa tu usuario" onkeydown="if(event.key===\'Enter\')doLogin()"></div>'+
-    '<div class="field"><label>Contraseña</label><input id="l-password" type="password" placeholder="Ingresa tu contraseña" onkeydown="if(event.key===\'Enter\')doLogin()"></div>'+
+    '<div class="field"><label>Contraseña</label><div style="position:relative">'+
+      '<input id="l-password" type="password" placeholder="Ingresa tu contraseña" style="padding-right:38px" onkeydown="if(event.key===\'Enter\')doLogin()">'+
+      '<button type="button" onclick="toggleLoginPassword()" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#aaa;padding:4px;display:flex" title="Ver contraseña"><i class="ti ti-eye" id="l-password-icon"></i></button>'+
+    '</div></div>'+
     '<button class="btn primary" style="width:100%;margin-top:8px;padding:10px;font-size:14px" onclick="doLogin()"><i class="ti ti-login"></i> Ingresar</button>'+
-    '<div style="margin-top:20px;padding-top:16px;border-top:1px solid #f0f0f0;font-size:11px;color:#bbb;text-align:center">admin / admin123 &nbsp;|&nbsp; tecnico / tec123</div>'+
     '</div></div>'
+}
+
+function toggleLoginPassword() {
+  const inp = document.getElementById('l-password')
+  const icon = document.getElementById('l-password-icon')
+  if(!inp) return
+  const show = inp.type === 'password'
+  inp.type = show ? 'text' : 'password'
+  if(icon) { icon.classList.toggle('ti-eye', !show); icon.classList.toggle('ti-eye-off', show) }
 }
 
 async function doLogin() {
@@ -895,7 +906,7 @@ async function guardarOT() {
   const tecnicoAsignado = val('f-tecnico')
   console.log('Guardando OT con tecnico:', tecnicoAsignado)
   const data = {
-    id: editId||Date.now().toString(),
+    id: editId||genUUID(),
     orden:val('f-orden'), fecha:val('f-fecha'), servicio:val('f-servicio'),
     estado:val('f-estado')||'En revisión', tecnico:tecnicoAsignado, garantia:val('f-garantia'),
     cliente:val('f-cliente'), rut:val('f-rut'), solicitado:val('f-solicitado'),
@@ -915,7 +926,11 @@ async function guardarOT() {
     data.params=prevData.params||{}
   }
   // Save to Supabase
-  await saveOT(data)
+  const saved = await saveOT(data)
+  if(!saved) {
+    showAlert('save-alert','No se pudo guardar la orden. Revisa tu conexión e intenta de nuevo.','warning',6000)
+    return
+  }
   if(!editId) { OTs.unshift(data); await upsertCliente(data) }
   else { const idx=OTs.findIndex(function(x){return x.id===editId}); if(idx>=0) OTs[idx]=data }
 
@@ -1456,7 +1471,7 @@ function renderUsuarios() {
       '<td><span class="badge '+(u.rol==='admin'?'open':u.rol==='operador'?'waiting':'done')+'">'+(u.rol==='admin'?'Administrador':u.rol==='operador'?'Operador':'Técnico')+'</span></td>'+
       '<td>'+OTs.filter(function(o){return o.tecnico===u.nombre}).length+'</td>'+
       '<td><div class="inline"><button class="btn sm" onclick="showAddUsuario(\''+u.id+'\')"><i class="ti ti-edit"></i></button>'+
-      (u.id!==currentUser.id?'<button class="btn sm danger" onclick="deleteUsuario('+JSON.stringify(u.id)+')" ><i class="ti ti-trash"></i></button>':'')+
+      (u.id!==currentUser.id?('<button class="btn sm danger" onclick="deleteUsuario(\''+u.id+'\')" ><i class="ti ti-trash"></i></button>'):'')+
       '</div></td></tr>'}).join('')+'</tbody></table></div>'
 }
 function showAddUsuario(id) {
@@ -1735,5 +1750,6 @@ window.abrirNotif=abrirNotif; window.OTs=OTs
 window.toggleSidebar=toggleSidebar; window.closeSidebar=closeSidebar
 window.onTipoChange=onTipoChange; window.renderParamsForTipo=renderParamsForTipo
 window.enviarSolicitudInsumo=enviarSolicitudInsumo
+window.closeModal=closeModal; window.toggleLoginPassword=toggleLoginPassword
 
 renderLogin()
