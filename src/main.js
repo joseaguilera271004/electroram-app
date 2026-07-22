@@ -53,6 +53,7 @@ let Usuarios = []
 let currentUser = null
 let photoDataURLs = []
 let notifInterval = null
+let currentViewName = null
 
 // Save to Supabase
 async function saveOT(data) {
@@ -102,9 +103,8 @@ function genOrden() {
   const d = new Date()
   const dd = String(d.getDate()).padStart(2,'0')
   const mm = String(d.getMonth()+1).padStart(2,'0')
-  const yy = String(d.getFullYear()).slice(2)
-  const seq = String(OTs.length+1).padStart(3,'0')
-  return dd+mm+yy+'-'+seq
+  const seq = String(OTs.length+1).padStart(2,'0')
+  return dd+mm+'-'+seq
 }
 function badgeHtml(estado) {
   const map = {'En revisión':'open','En reparación':'repair','Esperando repuesto':'waiting','Listo para entrega':'done','Entregado':'done','Garantía':'warranty','Presupuesto':'budget'}
@@ -119,6 +119,7 @@ function showAlert(id,msg,type,ms) {
   setTimeout(()=>el.classList.add('hidden'),ms)
 }
 function isAdmin() { return currentUser&&currentUser.rol==='admin' }
+function isOperador() { return currentUser&&currentUser.rol==='operador' }
 function getTecnicos() { return Usuarios.filter(u=>u.rol==='tecnico') }
 
 // ─── NOTIFICACIONES ──────────────────────────────────────────
@@ -201,7 +202,7 @@ function abrirNotif(notifId, otId) {
   if(otId) {
     const o = OTs.find(function(x){return x.id===otId})
     if(o) {
-      if(isAdmin()) openOT(otId)
+      if(isAdmin()||isOperador()) openOT(otId)
       else openInforme(otId)
     }
   }
@@ -213,11 +214,10 @@ async function checkNotifLoop() {
     // Refresh OTs
     const freshOTs = await SB.select('ots')
     if(freshOTs) {
-      const currentView = document.querySelector('.nav-item.active')?.dataset?.view
       OTs = freshOTs
       // Re-render lista if currently on lista or dashboard view
-      if(currentView === 'lista') renderLista()
-      if(currentView === 'dashboard') renderDashboard()
+      if(currentViewName === 'lista') renderOTList()
+      if(currentViewName === 'dashboard') renderDashboard()
     }
 
     // Refresh solicitudes
@@ -225,6 +225,7 @@ async function checkNotifLoop() {
     if(freshSol) {
       Solicitudes = freshSol
       updateBadgeSol()
+      if(currentViewName === 'solicitudes') renderSolicitudes()
     }
 
     // Refresh notificaciones
@@ -293,7 +294,7 @@ async function doLogin() {
     currentUser = users[0]
     await loadAll()
     renderApp()
-    if(isAdmin()) showView('nueva')
+    if(isAdmin()||isOperador()) showView('nueva')
     else showView('lista')
     notifInterval = setInterval(checkNotifLoop, 10000)
   } catch(e) {
@@ -361,12 +362,13 @@ window.openMobMenu = openMobMenu
 window.closeMobMenu = closeMobMenu
 
 function renderApp() {
-  const adminMenuItems = isAdmin() ? 
+  const adminMenuItems = isAdmin() ?
     '<span class="nav-section">Administración</span>'+
     '<div class="nav-item" id="nav-inventario" onclick="showView(\'inventario\')"><i class="ti ti-package"></i> Bodega</div>'+
     '<div class="nav-item" id="nav-solicitudes" onclick="showView(\'solicitudes\')"><i class="ti ti-bell"></i> Solicitudes <span id="badge-sol" class="badge-dot hidden"></span></div>'+
     '<div class="nav-item" id="nav-usuarios" onclick="showView(\'usuarios\')"><i class="ti ti-users-group"></i> Usuarios</div>'+
     '<div class="nav-item" id="nav-dashboard" onclick="showView(\'dashboard\')"><i class="ti ti-chart-bar"></i> Dashboard</div>'
+    : isOperador() ? ''
     :
     '<span class="nav-section">Laboratorio</span>'+
     '<div class="nav-item" id="nav-solicitudes" onclick="showView(\'solicitudes\')"><i class="ti ti-package"></i> Solicitar insumos</div>'
@@ -385,7 +387,7 @@ function renderApp() {
       '<div style="padding:8px 12px;margin:0 8px 8px;background:#EFF6FF;border-radius:8px;display:flex;align-items:center;gap:8px">'+
         '<div class="avatar" style="width:28px;height:28px;font-size:11px">'+currentUser.nombre.split(' ').map(function(w){return w[0]}).slice(0,2).join('')+'</div>'+
         '<div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:600;color:#185FA5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+currentUser.nombre+'</div>'+
-        '<div style="font-size:10px;color:#888">'+(isAdmin()?'Administrador':'Técnico')+'</div></div>'+
+        '<div style="font-size:10px;color:#888">'+(isAdmin()?'Administrador':isOperador()?'Operador':'Técnico')+'</div></div>'+
         '<div style="position:relative">'+
           '<button id="notif-btn" onclick="toggleNotifPanel()" style="background:none;border:none;cursor:pointer;color:#888;font-size:20px;position:relative;padding:2px" title="Notificaciones"><i class="ti ti-bell"></i></button>'+
           '<span id="notif-badge" style="display:none;position:absolute;top:-4px;right:-4px;background:#dc2626;color:#fff;font-size:9px;font-weight:700;border-radius:10px;padding:1px 4px;min-width:16px;text-align:center"></span>'+
@@ -394,8 +396,9 @@ function renderApp() {
       '</div>'+
       '<div id="notif-panel" class="hidden" style="position:absolute;left:8px;right:8px;top:120px;background:#fff;border:1px solid #e5e5e5;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.12);z-index:200;max-height:400px;overflow-y:auto"></div>'+
       '<span class="nav-section">Órdenes</span>'+
-      (isAdmin() ? '<div class="nav-item" id="nav-nueva" onclick="showView(\'nueva\')" ><i class="ti ti-plus"></i> Nueva OT</div>' : '')+
-      (isAdmin() ? '<div class="nav-item" id="nav-lista" onclick="showView(\'lista\')"><i class="ti ti-list"></i> Todas las OT</div>' : '<div class="nav-item active" id="nav-lista" onclick="showView(\'lista\')"><i class="ti ti-list"></i> Mis OT asignadas</div>')+
+      ((isAdmin()||isOperador()) ? '<div class="nav-item" id="nav-nueva" onclick="showView(\'nueva\')" ><i class="ti ti-plus"></i> Nueva OT</div>' : '')+
+      (isAdmin() ? '<div class="nav-item" id="nav-antigua" onclick="nuevaOrdenAntigua()"><i class="ti ti-history"></i> Ingresar orden antigua</div>' : '')+
+      ((isAdmin()||isOperador()) ? '<div class="nav-item" id="nav-lista" onclick="showView(\'lista\')"><i class="ti ti-list"></i> Todas las OT</div>' : '<div class="nav-item active" id="nav-lista" onclick="showView(\'lista\')"><i class="ti ti-list"></i> Mis OT asignadas</div>')+
       '<span class="nav-section">Datos</span>'+
       '<div class="nav-item" id="nav-clientes" onclick="showView(\'clientes\')"><i class="ti ti-building"></i> Clientes</div>'+
       '<div class="nav-item" id="nav-equipos" onclick="showView(\'equipos\')"><i class="ti ti-radio"></i> Equipos / S/N</div>'+
@@ -425,7 +428,7 @@ function renderApp() {
             '<div class="field"><label>N° Orden</label><input id="f-orden" readonly></div>'+
             '<div class="field"><label>Fecha recepción *</label><input type="date" id="f-fecha"></div>'+
             '<div class="field"><label>Tipo de servicio *</label>'+
-              '<select id="f-servicio"><option value="">Seleccionar...</option><option>Presupuesto</option><option>Reparación</option><option>Programación</option><option>Mantención</option><option>Garantía</option><option>Revisión</option></select>'+
+              '<select id="f-servicio"><option value="">Seleccionar...</option><option>Presupuesto</option><option>Reparación</option><option>Programación</option><option>Mantención</option><option>Garantía</option><option>Ajuste</option></select>'+
             '</div>'+
           '</div>'+
         '</div>'+
@@ -458,10 +461,7 @@ function renderApp() {
                 '<option value="">Seleccionar...</option>'+
                 '<option value="radio">Radio</option>'+
                 '<option value="duplexor">Duplexor</option>'+
-                '<option value="antena">Antena</option>'+
-                '<option value="regulador">Regulador de carga</option>'+
-                '<option value="conversor">Conversor de voltaje</option>'+
-                '<option value="otro">Otro equipamiento</option>'+
+                '<option value="otro">Otro</option>'+
               '</select>'+
             '</div>'+
             '<div class="field" id="f-subtipo-wrap" style="display:none">'+
@@ -479,6 +479,7 @@ function renderApp() {
             '<div class="field"><label>N° de Serie</label><input id="f-serie" placeholder="752TRKA455" oninput="checkHistorial(this.value)"></div>'+
           '</div>'+
           '<div id="hist-alert" class="alert hidden"></div>'+
+          '<div id="accs-radio-wrap">'+
           '<div class="section-label"><i class="ti ti-package"></i> Accesorios recibidos</div>'+
           '<div style="display:flex;flex-direction:column;gap:6px">'+
             '<div style="display:grid;grid-template-columns:120px 160px 1fr;gap:8px;padding:6px 0;border-bottom:1px solid #f0f0f0">'+
@@ -532,8 +533,12 @@ function renderApp() {
               '<input id="a-cargador-obs" placeholder="Observación..." style="padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-family:inherit;font-size:12px;width:100%">'+
             '</div>'+
           '</div>'+
-          '<textarea id="accs-obs-otros" placeholder="Observaciones sobre accesorios o estado del equipo al ingreso..." style="display:none;width:100%;min-height:80px;padding:8px;border:1px solid #ddd;border-radius:8px;font-family:inherit;font-size:13px;resize:vertical"></textarea>'+
           '</div>'+
+          '<div id="accs-obs-wrap" style="display:none">'+
+            '<div class="section-label"><i class="ti ti-notes"></i> Observación del equipo</div>'+
+            '<textarea id="accs-obs-otros" placeholder="Observaciones sobre el estado del equipo al ingreso..." style="width:100%;min-height:80px;padding:8px;border:1px solid #ddd;border-radius:8px;font-family:inherit;font-size:13px;resize:vertical"></textarea>'+
+          '</div>'+
+        '</div>'+
         '</div>'+
 
         // Observaciones cliente
@@ -542,8 +547,8 @@ function renderApp() {
           '<div class="field" style="margin:0"><textarea id="f-observaciones" placeholder="Qué indica el cliente, qué falla reporta..."></textarea></div>'+
         '</div>'+
 
-        // Asignación técnico (solo admin)
-        (isAdmin() ?
+        // Asignación técnico (admin u operador)
+        ((isAdmin()||isOperador()) ?
         '<div class="card">'+
           '<div class="card-title"><i class="ti ti-user-check"></i> Asignar técnico</div>'+
           '<div class="grid2">'+
@@ -554,13 +559,12 @@ function renderApp() {
               '<select id="f-estado"><option>Ingreso de equipo</option><option>En revisión</option><option>Esperando repuesto</option><option>En reparación</option><option>Listo para entrega</option><option>Entregado</option><option>Garantía</option></select>'+
             '</div>'+
           '</div>'+
-          '<div class="field"><label>Garantía</label><input id="f-garantia" placeholder="ej: 30 días mano de obra"></div>'+
         '</div>'
-        : '<input type="hidden" id="f-tecnico"><input type="hidden" id="f-estado" value="En revisión"><input type="hidden" id="f-garantia">') +
+        : '<input type="hidden" id="f-tecnico"><input type="hidden" id="f-estado" value="En revisión">') +
 
         // Fotos
         '<div class="card">'+
-          '<div class="card-title"><i class="ti ti-camera"></i> Fotografías del equipo</div>'+
+          '<div class="card-title"><i class="ti ti-camera"></i> Fotografía recepción de equipo</div>'+
           '<input type="file" id="foto-input" accept="image/*" multiple style="display:none" onchange="handlePhotos(this)">'+
           '<div class="photo-zone" onclick="document.getElementById(\'foto-input\').click()">'+
             '<i class="ti ti-camera-plus" style="font-size:32px;margin-bottom:8px;display:block"></i>'+
@@ -633,10 +637,6 @@ function renderApp() {
             '<span style="font-size:11px;color:#aaa;font-weight:600">Stock</span><span></span>'+
           '</div>'+
           '<div id="repuestos-container"></div>'+
-          '<div style="margin-top:10px;padding-top:10px;border-top:1px solid #f5f5f4">'+
-            '<label style="font-size:13px;color:#555">Costo mano de obra $</label>'+
-            '<input type="number" id="f-mdo" placeholder="0" style="width:130px;padding:7px 10px;border:1px solid #ddd;border-radius:8px;font-family:inherit;font-size:13px;margin-left:10px">'+
-          '</div>'+
         '</div>'+
         '<div class="card">'+
           '<div class="card-title"><i class="ti ti-flag"></i> Estado de la OT</div>'+
@@ -658,8 +658,8 @@ function renderApp() {
     // ── LISTA OT ──
     '<div id="view-lista" class="view hidden">'+
       '<div class="topbar">'+
-        '<div class="inline"><button class="hamburger" onclick="toggleSidebar()"><i class="ti ti-menu-2"></i></button><div><h1>'+(isAdmin()?'Todas las órdenes':'Mis OT asignadas')+'</h1></div></div>'+
-        (isAdmin()?'<button class="btn primary" onclick="showView(\'nueva\')"><i class="ti ti-plus"></i> Nueva OT</button>':'')+
+        '<div class="inline"><button class="hamburger" onclick="toggleSidebar()"><i class="ti ti-menu-2"></i></button><div><h1>'+((isAdmin()||isOperador())?'Todas las órdenes':'Mis OT asignadas')+'</h1></div></div>'+
+        ((isAdmin()||isOperador())?'<button class="btn primary" onclick="showView(\'nueva\')"><i class="ti ti-plus"></i> Nueva OT</button>':'')+
       '</div>'+
       '<div class="search-bar">'+
         '<div class="search-wrap"><i class="ti ti-search"></i><input id="search-ot" placeholder="Buscar por empresa, N° orden, modelo, serie..." oninput="filtrarOT()"></div>'+
@@ -675,7 +675,7 @@ function renderApp() {
     // ── CLIENTES ──
     '<div id="view-clientes" class="view hidden">'+
       '<div class="topbar"><h1>Clientes</h1>'+
-        (isAdmin()?'<button class="btn primary" onclick="showFormCliente()"><i class="ti ti-plus"></i> Nuevo cliente</button>':'')+
+        ((isAdmin()||isOperador())?'<button class="btn primary" onclick="showFormCliente()"><i class="ti ti-plus"></i> Nuevo cliente</button>':'')+
       '</div>'+
       '<div class="search-bar"><div class="search-wrap"><i class="ti ti-search"></i>'+
         '<input id="search-cliente" placeholder="Buscar cliente, RUT, ciudad..." oninput="filtrarClientes()"></div></div>'+
@@ -776,6 +776,7 @@ function renderApp() {
 
 // ─── NAVEGACIÓN ──────────────────────────────────────────────
 function showView(v) {
+  currentViewName = v
   setTimeout(function(){
     var btn = document.getElementById('mob-menu-btn')
     if(btn && !btn._hasListener) {
@@ -789,7 +790,7 @@ function showView(v) {
   const navEl = document.getElementById('nav-'+v)
   if(viewEl) viewEl.classList.remove('hidden')
   if(navEl) navEl.classList.add('active')
-  if(v==='nueva' && !isAdmin()) { showView('lista'); return }
+  if(v==='nueva' && !isAdmin() && !isOperador()) { showView('lista'); return }
   if(v==='nueva') initForm()
   if(v==='lista') renderOTList()
   if(v==='clientes') renderClientesList(Clientes)
@@ -812,11 +813,20 @@ function updateBadgeSol() {
 function initForm() {
   const editId = document.getElementById('_editing_id')?.value
   if(!editId) {
+    const ordenEl = document.getElementById('f-orden')
+    if(ordenEl) ordenEl.setAttribute('readonly','')
     setVal('f-orden', genOrden())
     setVal('f-fecha', new Date().toISOString().split('T')[0])
   }
   renderTecnicosSelect()
   if(document.getElementById('repuestos-container') && !document.getElementById('repuestos-container').children.length) addRepuesto()
+}
+
+function nuevaOrdenAntigua() {
+  showView('nueva')
+  const el = document.getElementById('f-orden')
+  if(el) { el.removeAttribute('readonly'); el.value=''; el.placeholder='ej: 2107-01' }
+  showAlert('save-alert','Modo orden antigua: ingresa manualmente el N° de orden y la fecha de recepción.','warning',6000)
 }
 
 function renderTecnicosSelect() {
@@ -864,7 +874,7 @@ function checkHistorial(serie) {
 }
 
 async function guardarOT() {
-  const reqs = [['f-cliente','Cliente'],['f-marca','Marca'],['f-modelo','Modelo'],['f-servicio','Tipo de servicio']]
+  const reqs = [['f-orden','N° Orden'],['f-cliente','Cliente'],['f-marca','Marca'],['f-modelo','Modelo'],['f-servicio','Tipo de servicio']]
   for(let i=0;i<reqs.length;i++) { if(!val(reqs[i][0])) { showAlert('save-alert','Por favor completa el campo: '+reqs[i][1],'warning',4000); return } }
   const editId = document.getElementById('_editing_id')?.value
   const tecnicoAsignado = val('f-tecnico')
@@ -936,7 +946,7 @@ function removePhoto(i){photoDataURLs.splice(i,1);renderPhotoGrid()}
 // ─── INFORME TÉCNICO ─────────────────────────────────────────
 function openInforme(id) {
   const o = OTs.find(function(x){return x.id===id}); if(!o) return
-  if(!isAdmin() && normStr(o.tecnico)!==normStr(currentUser.nombre)) { alert('Esta OT no esta asignada a ti.'); return }
+  if(!isAdmin() && !isOperador() && normStr(o.tecnico)!==normStr(currentUser.nombre)) { alert('Esta OT no esta asignada a ti.'); return }
   showView('informe')
   document.getElementById('inf-ot-id').value = id
   document.getElementById('inf-titulo').textContent = 'Informe técnico — OT '+o.orden
@@ -1004,7 +1014,7 @@ function openInforme(id) {
       {key:'antena',obsKey:'antenaObs',label:'Antena'},
       {key:'carcasa',obsKey:'carcasaObs',label:'Carcasa'},
       {key:'perillas',obsKey:'perillasObs',label:'Perillas'},
-      {key:'pernos',obsKey:'pernosObs',label:'Pernos'},
+      {key:'pernos',obsKey:'pernosObs',label:'Otro'},
       {key:'mariposas',obsKey:'maripososObs',label:'Mariposas'},
       {key:'pinza',obsKey:'pinzaObs',label:'Pinza'},
       {key:'cargador',obsKey:'cargadorObs',label:'Cargador'}
@@ -1058,10 +1068,13 @@ async function guardarInforme() {
     if(item){ if(item.cantidad>=r.qty){item.cantidad-=r.qty}else{sinStock.push(r)} }
   })
   if(sinStock.length) {
-    sinStock.forEach(function(r){
-      Solicitudes.unshift({id:genUUID(),codigo:r.codigo,desc:r.desc,qty:r.qty,solicitadoPor:currentUser.nombre,fecha:new Date().toISOString().split('T')[0],ot:o.orden,estado:'Pendiente',obs:''})
-    })
+    for(const r of sinStock) {
+      const sol = {id:genUUID(),codigo:r.codigo,descripcion:r.desc,qty:r.qty,solicitado_por:currentUser.nombre,fecha:new Date().toISOString().split('T')[0],ot:o.orden,estado:'Pendiente',obs:'',tipo:'repuesto'}
+      Solicitudes.unshift(sol)
+      await SB.insert('solicitudes', sol)
+    }
   }
+  const estadoAnterior = o.estado
   o.banda=val('inf-banda'); o.frecuencias=val('inf-frecuencias'); o.canales=val('inf-canales')
   o.informe=val('inf-informe'); o.estado=val('inf-estado'); o.mdo=val('f-mdo')
   o.repuestos=repuestos
@@ -1071,11 +1084,19 @@ async function guardarInforme() {
     dev_i:val('p-dev-i'),dev_f:val('p-dev-f'),
     pot_i:val('p-pot-i'),pot_f:val('p-pot-f'),
     sens_i:val('p-sens-i'),sens_f:val('p-sens-f'),
-    bat_i:val('p-bat-i'),bat_f:val('p-bat-f')
+    bat_i:val('p-bat-i'),bat_f:val('p-bat-f'),
+    pot_dir:val('p-pot-dir'),pot_ref:val('p-pot-ref'),roe:val('p-roe'),
+    licencias:val('p-licencias'),version_sw:val('p-version-sw')
   }
   await saveOT(o)
   const otIdx = OTs.findIndex(function(x){return x.id===o.id})
   if(otIdx>=0) OTs[otIdx]=o
+  if(!isAdmin() && estadoAnterior !== o.estado) {
+    const destinatarios = Usuarios.filter(function(u){return u.rol==='admin'||u.rol==='operador'})
+    for(const u of destinatarios) {
+      await crearNotificacion(u.id, 'cambio_estado', currentUser.nombre+' cambió el estado de la OT '+o.orden+' a "'+o.estado+'"', o.id)
+    }
+  }
   updateBadgeSol()
   const msg = sinStock.length ? sinStock.length+' repuesto(s) sin stock. Solicitud enviada al admin.' : 'Informe guardado correctamente.'
   showAlert('inf-alert', msg, sinStock.length?'warning':'success')
@@ -1095,7 +1116,7 @@ function renderOTList() {
   const q=(document.getElementById('search-ot')?.value||'').toLowerCase()
   const est=document.getElementById('filter-estado')?.value||''
   let list
-  if(isAdmin()) {
+  if(isAdmin()||isOperador()) {
     list = OTs.slice()
   } else {
     const myName = normStr(currentUser ? currentUser.nombre : '')
@@ -1108,7 +1129,7 @@ function renderOTList() {
   })
   if(est) list=list.filter(function(o){return o.estado===est})
   if(!list.length){
-    el.innerHTML='<div class="empty-state"><i class="ti ti-clipboard-list"></i><p>'+(isAdmin()?'No hay órdenes aún.':'No tienes OT asignadas aún.')+'</p></div>'
+    el.innerHTML='<div class="empty-state"><i class="ti ti-clipboard-list"></i><p>'+((isAdmin()||isOperador())?'No hay órdenes aún.':'No tienes OT asignadas aún.')+'</p></div>'
     return
   }
   let rows = ''
@@ -1119,18 +1140,18 @@ function renderOTList() {
       '<td><div style="font-weight:600">'+o.cliente+'</div><div style="font-size:11px;color:#888">'+(o.ciudad||'')+'</div></td>'+
       '<td><div>'+o.marca+' '+o.modelo+'</div><div style="font-size:11px;color:#888">'+(o.tipo||'')+'</div></td>'+
       '<td style="font-family:monospace;font-size:12px">'+(o.serie||'-')+'</td>'+
-      (isAdmin()?'<td>'+(o.tecnico||'<span style="color:#aaa;font-size:12px">Sin asignar</span>')+'</td>':'')+
+      ((isAdmin()||isOperador())?'<td>'+(o.tecnico||'<span style="color:#aaa;font-size:12px">Sin asignar</span>')+'</td>':'')+
       '<td>'+o.fecha+'</td>'+
       '<td>'+badgeHtml(o.estado)+'</td>'+
       '<td><div class="inline">'+
         (isAdmin()?('<button class="btn sm" onclick="openOT(\'' + o.id + '\')" ><i class="ti ti-edit"></i></button>'):'')+
-        ('<button class="btn sm primary" onclick="openInforme(\'' + o.id + '\')" ><i class="ti ti-report"></i> '+(isAdmin()?'Informe':'Ver/Completar')+'</button>')+
+        ('<button class="btn sm primary" onclick="openInforme(\'' + o.id + '\')" ><i class="ti ti-report"></i> '+(isAdmin()?'Informe':isOperador()?'Ver':'Ver/Completar')+'</button>')+
       '</div></td>'+
     '</tr>'
   }
   el.innerHTML='<table><thead><tr>'+
     '<th>N° Orden</th><th>Cliente</th><th>Equipo</th><th>Serie</th>'+
-    (isAdmin()?'<th>Técnico</th>':'')+
+    ((isAdmin()||isOperador())?'<th>Técnico</th>':'')+
     '<th>Fecha</th><th>Estado</th><th></th>'+
   '</tr></thead><tbody>'+rows+'</tbody></table>'
 }
@@ -1170,7 +1191,7 @@ function openOT(id) {
 function renderClientesList(list) {
   const el=document.getElementById('clientes-list'); if(!el) return
   if(!list.length){el.innerHTML='<div class="empty-state"><i class="ti ti-users"></i><p>Sin clientes aún.</p></div>';return}
-  const cliActions = isAdmin() ? '<th></th>' : ''
+  const cliActions = (isAdmin()||isOperador()) ? '<th></th>' : ''
   el.innerHTML='<table><thead><tr><th>Empresa</th><th>RUT</th><th>Contacto</th><th>Teléfono</th><th>Email</th><th>Ciudad</th><th>OTs</th>'+cliActions+'</tr></thead><tbody>'+
     list.map(function(c){return '<tr>'+
       '<td style="font-weight:600">'+c.nombre+'</td>'+
@@ -1178,7 +1199,7 @@ function renderClientesList(list) {
       '<td>'+(c.contacto||'-')+'</td><td>'+(c.fono||'-')+'</td>'+
       '<td style="font-size:12px">'+(c.email||'-')+'</td><td>'+(c.ciudad||'-')+'</td>'+
       '<td><span class="badge open">'+OTs.filter(function(o){return o.cliente===c.nombre}).length+'</span></td>'+
-      (isAdmin()?'<td><div class="inline">'+
+      ((isAdmin()||isOperador())?'<td><div class="inline">'+
         '<button class="btn sm" onclick="editCliente(\''+c.id+'\')"><i class="ti ti-edit"></i></button>'+
         '<button class="btn sm danger" onclick="deleteCliente(\''+c.id+'\')"><i class="ti ti-trash"></i></button>'+
       '</div></td>':'')+
@@ -1353,19 +1374,25 @@ function renderSolicitudes() {
   let list=isAdmin()?Solicitudes:Solicitudes.filter(function(s){return (s.solicitado_por||s.solicitadoPor)===currentUser.nombre})
   if(!list.length){el.innerHTML='<div class="empty-state"><i class="ti ti-bell"></i><p>Sin solicitudes.</p></div>';return}
   el.innerHTML='<table><thead><tr><th>Fecha</th><th>OT</th><th>Código</th><th>Descripción</th><th>Cant.</th><th>Solicitado por</th><th>Estado</th>'+(isAdmin()?'<th>Acción</th>':'')+'</tr></thead><tbody>'+
-    list.map(function(s){return '<tr><td>'+s.fecha+'</td><td><span class="orden-num">'+s.ot+'</span></td><td style="font-family:monospace">'+s.codigo+'</td><td>'+s.desc+'</td><td>'+s.qty+'</td><td>'+s.solicitadoPor+'</td>'+
+    list.map(function(s){return '<tr><td>'+s.fecha+'</td><td><span class="orden-num">'+s.ot+'</span></td><td style="font-family:monospace">'+s.codigo+'</td><td>'+(s.descripcion||s.desc||'')+'</td><td>'+s.qty+'</td><td>'+(s.solicitado_por||s.solicitadoPor||'')+'</td>'+
       '<td><span class="badge '+(s.estado==='Pendiente'?'waiting':s.estado==='Aprobado'?'done':'repair')+'">'+s.estado+'</span></td>'+
       (isAdmin()?'<td>'+(s.estado==='Pendiente'?'<div class="inline"><button class="btn sm success" onclick="aprobarSolicitud(\''+s.id+'\')">Aprobar</button><button class="btn sm danger" onclick="rechazarSolicitud(\''+s.id+'\')">Rechazar</button></div>':'')+'</td>':'')+
       '</tr>'}).join('')+'</tbody></table>'
 }
-function aprobarSolicitud(id) {
+async function aprobarSolicitud(id) {
   const s=Solicitudes.find(function(x){return x.id===id}); if(!s) return
   const item=Inventario.find(function(i){return i.codigo.toLowerCase()===s.codigo.toLowerCase()})
-  const reponer=parseInt(prompt('Aprobar solicitud de "'+s.desc+'".\nUnidades a agregar al stock:',s.qty))
+  const reponer=parseInt(prompt('Aprobar solicitud de "'+(s.descripcion||s.desc||'')+'".\nUnidades a agregar al stock:',s.qty))
   if(isNaN(reponer))return
-  if(item)item.cantidad+=reponer
-  else Inventario.push({id:genUUID(),codigo:s.codigo,descripcion:s.desc,categoria:'Otros',cantidad:reponer,stockMin:2,obs:''})
-  s.estado='Aprobado'; saveAll(); renderSolicitudes(); updateBadgeSol()
+  if(item){ item.cantidad+=reponer; await SB.update('inventario', item.id, {cantidad:item.cantidad}) }
+  else {
+    const newItem={id:genUUID(),codigo:s.codigo,descripcion:s.descripcion||s.desc||'',categoria:'Otros',cantidad:reponer,stockMin:2,obs:''}
+    Inventario.push(newItem)
+    await SB.insert('inventario', newItem)
+  }
+  s.estado='Aprobado'
+  await SB.update('solicitudes', id, {estado:'Aprobado'})
+  renderSolicitudes(); updateBadgeSol()
 }
 async function rechazarSolicitud(id) {
   const s=Solicitudes.find(function(x){return x.id===id}); if(!s) return
@@ -1384,7 +1411,7 @@ function renderUsuarios() {
     Usuarios.map(function(u){return '<tr>'+
       '<td><div class="inline"><div class="avatar">'+u.nombre.split(' ').map(function(w){return w[0]}).slice(0,2).join('')+'</div>'+u.nombre+'</div></td>'+
       '<td style="font-family:monospace">@'+u.usuario+'</td>'+
-      '<td><span class="badge '+(u.rol==='admin'?'open':'done')+'">'+(u.rol==='admin'?'Administrador':'Técnico')+'</span></td>'+
+      '<td><span class="badge '+(u.rol==='admin'?'open':u.rol==='operador'?'waiting':'done')+'">'+(u.rol==='admin'?'Administrador':u.rol==='operador'?'Operador':'Técnico')+'</span></td>'+
       '<td>'+OTs.filter(function(o){return o.tecnico===u.nombre}).length+'</td>'+
       '<td><div class="inline"><button class="btn sm" onclick="showAddUsuario(\''+u.id+'\')"><i class="ti ti-edit"></i></button>'+
       (u.id!==currentUser.id?'<button class="btn sm danger" onclick="deleteUsuario('+JSON.stringify(u.id)+')" ><i class="ti ti-trash"></i></button>':'')+
@@ -1395,7 +1422,7 @@ function showAddUsuario(id) {
   showModal(u?'Editar usuario':'Nuevo usuario',
     '<div class="grid2">'+
     '<div class="field"><label>Nombre completo *</label><input id="m-unombre" value="'+(u?u.nombre:'')+'" placeholder="Juan Pérez"></div>'+
-    '<div class="field"><label>Rol *</label><select id="m-urol"><option value="tecnico">Técnico</option><option value="admin">Administrador</option></select></div>'+
+    '<div class="field"><label>Rol *</label><select id="m-urol"><option value="tecnico">Técnico</option><option value="operador">Operador</option><option value="admin">Administrador</option></select></div>'+
     '<div class="field"><label>Usuario *</label><input id="m-uusuario" value="'+(u?u.usuario:'')+'" placeholder="jperez"></div>'+
     '<div class="field"><label>Contraseña *</label><input id="m-upass" type="password" value="'+(u?u.password:'')+'" placeholder="mínimo 4 caracteres"></div>'+
     '</div>'+
@@ -1492,6 +1519,10 @@ function imprimirInforme() {
 function onTipoChange(tipo) {
   const wrap = document.getElementById('f-subtipo-wrap')
   if(wrap) wrap.style.display = tipo === 'radio' ? 'block' : 'none'
+  const accsRadio = document.getElementById('accs-radio-wrap')
+  const accsObs = document.getElementById('accs-obs-wrap')
+  if(accsRadio) accsRadio.style.display = tipo === 'radio' ? 'block' : 'none'
+  if(accsObs) accsObs.style.display = (tipo === 'duplexor' || tipo === 'otro') ? 'block' : 'none'
 }
 
 function renderParamsForTipo(tipo, params) {
@@ -1513,6 +1544,16 @@ function renderParamsForTipo(tipo, params) {
         '<span class="param-label">Potencia TX (W)</span><input class="param-input" id="p-pot-i" type="number" placeholder="0" value="'+(params.pot_i||'')+'"><input class="param-input" id="p-pot-f" type="number" placeholder="0" value="'+(params.pot_f||'')+'">'+
         '<span class="param-label">Sensibilidad (uV)</span><input class="param-input" id="p-sens-i" type="number" placeholder="0" value="'+(params.sens_i||'')+'"><input class="param-input" id="p-sens-f" type="number" placeholder="0" value="'+(params.sens_f||'')+'">'+
         '<span class="param-label">Batería (%)</span><input class="param-input" id="p-bat-i" type="number" placeholder="0" value="'+(params.bat_i||'')+'"><input class="param-input" id="p-bat-f" type="number" placeholder="0" value="'+(params.bat_f||'')+'">'+
+      '</div>'+
+      '<div class="section-label"><i class="ti ti-antenna"></i> Parámetros técnicos</div>'+
+      '<div class="grid3" style="margin-bottom:12px">'+
+        '<div class="field"><label>Potencia directa (W)</label><input class="param-input" id="p-pot-dir" type="number" placeholder="0" value="'+(params.pot_dir||'')+'"></div>'+
+        '<div class="field"><label>Potencia reflejada (W)</label><input class="param-input" id="p-pot-ref" type="number" placeholder="0" value="'+(params.pot_ref||'')+'"></div>'+
+        '<div class="field"><label>ROE</label><input class="param-input" id="p-roe" type="number" step="0.1" placeholder="1.0" value="'+(params.roe||'')+'"></div>'+
+      '</div>'+
+      '<div class="grid2">'+
+        '<div class="field"><label>Licencias cargadas</label><input id="p-licencias" placeholder="ej: 16 canales" value="'+(params.licencias||'')+'"></div>'+
+        '<div class="field"><label>Versión de software</label><input id="p-version-sw" placeholder="ej: R01.08.00" value="'+(params.version_sw||'')+'"></div>'+
       '</div>'
     if(params.banda) setVal('inf-banda', params.banda)
   }
@@ -1640,7 +1681,7 @@ function showViewMobile(v) {
 }
 
 // ─── EXPONER GLOBALES ────────────────────────────────────────
-window.showView=showView; window.doLogin=doLogin; window.doLogout=doLogout
+window.showView=showView; window.doLogin=doLogin; window.doLogout=doLogout; window.nuevaOrdenAntigua=nuevaOrdenAntigua
 window.guardarOT=guardarOT; window.resetForm=resetForm; window.handlePhotos=handlePhotos
 window.removePhoto=removePhoto; window.checkHistorial=checkHistorial
 window.filtrarOT=filtrarOT; window.openOT=openOT; window.openInforme=openInforme
